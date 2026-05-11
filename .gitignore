@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+*.pyc
+data/*.db
+files/raw/*
+files/translated/*
+!files/raw/.gitkeep
+!files/translated/.gitkeep
+

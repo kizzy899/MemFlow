@@ -1,0 +1,15 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+sqlalchemy==2.0.41
+pydantic-settings==2.9.1
+notion-client==2.4.0
+openai==1.79.0
+trafilatura==2.0.0
+readability-lxml==0.8.1
+beautifulsoup4==4.13.4
+httpx==0.28.1
+playwright==1.52.0
+python-dotenv==1.1.0
+tenacity==9.1.2
+pytest==8.3.5
+
