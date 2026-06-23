@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 
@@ -30,7 +30,7 @@ class FileStorageService:
         content = (
             f"# {title or 'Untitled Translation'}\n\n"
             f"原链接：{source_url or 'N/A'}\n\n"
-            f"生成时间：{datetime.utcnow().isoformat()}Z\n\n"
+            f"生成时间：{datetime.now(timezone.utc).isoformat()}\n\n"
             f"---\n\n"
             f"{translated_text.strip()}\n"
         )
@@ -41,7 +41,7 @@ class FileStorageService:
         slug = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "-", value).strip("-").lower()
         if not slug:
             slug = "item"
-        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         return f"{slug[:60]}-{timestamp}{suffix}"
 
     def _display_path(self, path: Path) -> str:

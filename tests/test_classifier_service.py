@@ -3,7 +3,7 @@ from app.services.classifier_service import ClassifierService
 
 def test_normalize_category_falls_back_to_default() -> None:
     service = ClassifierService()
-    assert service.normalize_category("unknown") == "待整理"
+    assert service.normalize_category("unknown") == "其他"
 
 
 def test_normalize_tags_limits_and_deduplicates() -> None:

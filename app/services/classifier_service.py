@@ -4,29 +4,29 @@ from typing import Iterable
 
 
 ALLOWED_CATEGORIES = [
-    "AI Agent",
+    "AI",
     "编程开发",
-    "产品设计",
-    "运营增长",
-    "商业模式",
     "英语学习",
-    "论文资料",
-    "工具教程",
-    "生活灵感",
-    "待整理",
+    "金融财务",
+    "论文写作",
+    "工具效率",
+    "项目灵感",
+    "生活经验",
+    "职业发展",
+    "其他",
 ]
 
 
 class ClassifierService:
     def normalize_category(self, category: str | None) -> str:
         if not category:
-            return "待整理"
+            return "其他"
 
         cleaned = category.strip()
         for allowed in ALLOWED_CATEGORIES:
             if cleaned.lower() == allowed.lower():
                 return allowed
-        return "待整理"
+        return "其他"
 
     def normalize_tags(self, tags: Iterable[str] | None) -> list[str]:
         if not tags:

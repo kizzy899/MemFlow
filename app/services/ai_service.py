@@ -1,13 +1,64 @@
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_fixed
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from app.config import Settings
 from app.services.classifier_service import ALLOWED_CATEGORIES, ClassifierService
 from app.services.exceptions import AIServiceError, ConfigError
+
+
+class AnalysisResult(BaseModel):
+    title: str = Field(min_length=1, max_length=40)
+    summary: str = Field(min_length=1, max_length=2000)
+    core_points: list[str] = Field(min_length=1, max_length=5)
+    action_items: list[str] = Field(max_length=5)
+    content_type: Literal[
+        "article",
+        "video",
+        "note",
+        "tutorial",
+        "paper",
+        "code_project",
+        "inspiration",
+        "tool",
+        "resource_collection",
+    ]
+    category_level_1: str
+    category_level_2: str = Field(min_length=1, max_length=100)
+    keywords: list[str] = Field(min_length=1, max_length=5)
+    importance: Literal["low", "medium", "high", "critical"]
+    original_language: str = Field(min_length=2, max_length=50)
+    is_translated: bool
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def clean_title(cls, value: object) -> str:
+        title = " ".join(str(value).split())
+        if not title:
+            raise ValueError("title cannot be empty")
+        return title if len(title) <= 40 else f"{title[:39]}…"
+
+    @field_validator("core_points", "action_items", "keywords", mode="before")
+    @classmethod
+    def clean_lists(cls, values: object) -> list[str]:
+        if not isinstance(values, list):
+            raise ValueError("value must be a JSON array")
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = str(value).strip()
+            if not item or item.lower() in seen:
+                continue
+            seen.add(item.lower())
+            cleaned.append(item[:500])
+            if len(cleaned) >= 5:
+                break
+        return cleaned
 
 
 class AIService:
@@ -15,24 +66,31 @@ class AIService:
         self.settings = settings
         self.classifier_service = classifier_service
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(1), reraise=True)
-    def summarize_and_classify(self, source_url: str, title: str, text: str) -> dict[str, object]:
+    @retry(
+        retry=retry_if_exception_type(AIServiceError),
+        stop=stop_after_attempt(3),
+        wait=wait_fixed(1),
+        reraise=True,
+    )
+    def analyze(self, source_url: str, title: str, text: str) -> AnalysisResult:
         if not self.settings.openai_api_key:
             raise ConfigError("OPENAI_API_KEY is not configured")
 
         client = OpenAI(api_key=self.settings.openai_api_key, base_url=self.settings.openai_base_url or None)
-        excerpt = text[:8000]
         prompt = (
-            "你是个人知识库整理助手。请根据输入内容输出 JSON，字段必须只有："
-            "one_sentence_summary, core_points, use_case, category, tags, raw_excerpt。"
-            f"category 只能从以下分类中选择一个：{', '.join(ALLOWED_CATEGORIES)}。"
-            "tags 最多 5 个。raw_excerpt 需要是原文摘要，不超过 200 字。"
+            "你是个人知识库整理助手。根据原始内容生成可直接保存的中文结构化笔记。"
+            "只输出 JSON，不要 Markdown 或解释。必须包含字段：title, summary, core_points, "
+            "action_items, content_type, category_level_1, category_level_2, keywords, importance, "
+            "original_language, is_translated。summary、core_points、action_items、分类和关键词必须使用中文；"
+            "不要编造原文没有的信息。title 必须重新概括内容主题，使用简洁中文短语，不照抄网页标题，"
+            "不添加网站名、作者、仓库路径或副标题，最多 20 个汉字（或 40 个字符）。"
+            f"category_level_1 只能是：{', '.join(ALLOWED_CATEGORIES)}。"
+            "content_type 只能是 article、video、note、tutorial、paper、code_project、inspiration、tool、"
+            "resource_collection。importance 只能是 low、medium、high、critical。"
+            "original_language 使用语言代码（如 zh-CN、en），非中文内容的 is_translated 为 true。"
+            "core_points 为 1-5 条，action_items 为 0-5 条，keywords 为 1-5 个。"
         )
-        user_message = (
-            f"标题：{title}\n"
-            f"原链接：{source_url}\n"
-            f"正文：\n{excerpt}\n"
-        )
+        user_message = f"已有标题：{title or '无'}\n原始链接：{source_url or '无'}\n正文：\n{text[:8000]}"
 
         try:
             response = client.chat.completions.create(
@@ -44,72 +102,44 @@ class AIService:
                 ],
                 temperature=0.2,
             )
-            content = response.choices[0].message.content or "{}"
-            parsed = json.loads(content)
+            parsed = json.loads(response.choices[0].message.content or "{}")
+            parsed["category_level_1"] = self.classifier_service.normalize_category(
+                str(parsed.get("category_level_1", ""))
+            )
+            result = AnalysisResult.model_validate(parsed)
+            result.category_level_1 = self.classifier_service.normalize_category(result.category_level_1)
+            result.keywords = self.classifier_service.normalize_tags(result.keywords)
+        except (ValidationError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            raise AIServiceError(f"AI returned invalid structured content: {exc}") from exc
         except Exception as exc:
-            raise AIServiceError(f"Failed to summarize content: {exc}") from exc
+            raise AIServiceError(f"Failed to analyze content: {exc}") from exc
 
-        category = self.classifier_service.normalize_category(str(parsed.get("category", "")))
-        tags = self.classifier_service.normalize_tags(self._coerce_tags(parsed.get("tags")))
-        summary = self._format_summary(
-            source_url=source_url,
-            one_sentence_summary=str(parsed.get("one_sentence_summary", "")).strip(),
-            core_points=parsed.get("core_points") or [],
-            use_case=str(parsed.get("use_case", "")).strip(),
-            category=category,
-            tags=tags,
-        )
+        result.is_translated = not result.original_language.lower().startswith("zh")
+        return result
+
+    def summarize_and_classify(self, source_url: str, title: str, text: str) -> dict[str, object]:
+        result = self.analyze(source_url, title, text)
         return {
-            "summary": summary,
-            "category": category,
-            "tags": tags,
-            "raw_excerpt": str(parsed.get("raw_excerpt", "")).strip(),
+            "title": result.title,
+            "summary": self._format_legacy_summary(source_url, result),
+            "category": result.category_level_1,
+            "tags": result.keywords,
+            "raw_excerpt": result.summary[:200],
+            "analysis": result,
         }
 
-    def _coerce_tags(self, raw_tags: object) -> list[str]:
-        if raw_tags is None:
-            return []
-        if isinstance(raw_tags, str):
-            return [part.strip() for part in raw_tags.replace("，", ",").split(",") if part.strip()]
-        if isinstance(raw_tags, list):
-            return [str(part) for part in raw_tags]
-        return [str(raw_tags)]
-
-    def _format_summary(
-        self,
-        source_url: str,
-        one_sentence_summary: str,
-        core_points: list[object],
-        use_case: str,
-        category: str,
-        tags: list[str],
-    ) -> str:
+    def _format_legacy_summary(self, source_url: str, result: AnalysisResult) -> str:
         lines = [
             "原链接：",
-            source_url,
+            source_url or "无",
             "",
-            "一句话总结：",
-            one_sentence_summary or "暂无",
+            "摘要：",
+            result.summary,
             "",
             "核心内容：",
         ]
-        cleaned_points = [str(point).strip() for point in core_points if str(point).strip()]
-        if cleaned_points:
-            for idx, point in enumerate(cleaned_points[:3], start=1):
-                lines.append(f"{idx}. {point}")
-        else:
-            lines.append("1. 暂无")
-        lines.extend(
-            [
-                "",
-                "适合用途：",
-                use_case or "待补充",
-                "",
-                "分类：",
-                category,
-                "",
-                "标签：",
-                "、".join(tags) if tags else "待整理",
-            ]
-        )
+        lines.extend(f"{index}. {point}" for index, point in enumerate(result.core_points, start=1))
+        if result.action_items:
+            lines.extend(["", "行动建议："])
+            lines.extend(f"{index}. {item}" for index, item in enumerate(result.action_items, start=1))
         return "\n".join(lines)

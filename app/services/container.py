@@ -5,6 +5,7 @@ from app.services.ai_service import AIService
 from app.services.classifier_service import ClassifierService
 from app.services.content_pipeline_service import ContentPipelineService
 from app.services.file_storage_service import FileStorageService
+from app.services.item_service import ItemService
 from app.services.notion_service import NotionService
 from app.services.translation_service import TranslationService
 from app.services.web_parser_service import WebParserService
@@ -19,9 +20,10 @@ class ServiceContainer:
         self.web_parser_service = WebParserService(settings, self.file_storage_service)
         self.ai_service = AIService(settings, self.classifier_service)
         self.notion_service = NotionService(settings)
+        self.item_service = ItemService(self.notion_service)
         self.translation_service = TranslationService(self.web_parser_service, self.file_storage_service)
         self.xiaohongshu_service = XiaohongshuService(settings)
         self.content_pipeline_service = ContentPipelineService(
-            self.web_parser_service, self.ai_service, self.notion_service
+            self.web_parser_service, self.ai_service, self.item_service
         )
 

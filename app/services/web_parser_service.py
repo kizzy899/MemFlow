@@ -84,10 +84,13 @@ class WebParserService:
             )
         }
         proxy = self.settings.proxy_url or None
-        with httpx.Client(follow_redirects=True, timeout=20.0, proxy=proxy) as client:
-            response = client.get(url, headers=headers)
-            response.raise_for_status()
-            return response.text
+        try:
+            with httpx.Client(follow_redirects=True, timeout=20.0, proxy=proxy) as client:
+                response = client.get(url, headers=headers)
+                response.raise_for_status()
+                return response.text
+        except httpx.HTTPError as exc:
+            raise ParsingError(f"Unable to fetch {url}: {exc}") from exc
 
     def _extract_title_from_html(self, html: str) -> str:
         soup = BeautifulSoup(html, "html.parser")

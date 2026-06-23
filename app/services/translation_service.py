@@ -2,10 +2,19 @@ from __future__ import annotations
 
 from importlib import import_module
 
-from app.models.content_item import ContentItem, ContentType, ProcessStatus, SourcePlatform, TranslationStatus
+from app.models.content_item import (
+    ContentItem,
+    ContentType,
+    InputType,
+    ProcessStatus,
+    SourcePlatform,
+    StageStatus,
+    TranslationStatus,
+)
 from app.services.exceptions import TranslationError
 from app.services.file_storage_service import FileStorageService
 from app.services.web_parser_service import WebParserService
+from app.utils.content_identity import content_hash, normalize_text, normalize_url
 
 
 class TranslationService:
@@ -34,11 +43,15 @@ class TranslationService:
         translated_file_path = self.file_storage_service.save_translation_markdown(title, source_url, translated_text)
 
         item = ContentItem(
+            input_type=InputType.URL if source_url else InputType.TEXT,
             title=title,
             source_url=source_url or None,
+            normalized_url=normalize_url(source_url) if source_url else None,
+            content_hash=content_hash(raw_text) if not source_url else None,
             source_platform=SourcePlatform.TRANSLATION,
             content_type=ContentType.TRANSLATION,
             raw_text=raw_text,
+            clean_content=normalize_text(raw_text),
             raw_excerpt=source_text[:200],
             summary=f"原链接：\n{source_url or 'N/A'}\n\n一句话总结：\n翻译任务已完成\n",
             category="英语学习",
@@ -48,6 +61,8 @@ class TranslationService:
             translated_text_path=translated_file_path,
             translation_status=TranslationStatus.TRANSLATED,
             process_status=ProcessStatus.COMPLETED,
+            fetch_status=StageStatus.SUCCESS if source_url else StageStatus.SKIPPED,
+            ai_status=StageStatus.SKIPPED,
         )
         return item, translated_text
 

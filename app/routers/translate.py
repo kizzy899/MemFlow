@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -22,27 +21,27 @@ def submit_translation(
     try:
         generated_item, _ = container.translation_service.translate(payload.type, payload.content)
         item = generated_item
-        if generated_item.source_url:
-            existing = db.scalar(select(ContentItem).where(ContentItem.source_url == generated_item.source_url))
-            if existing:
-                existing.title = generated_item.title or existing.title
-                existing.raw_text = generated_item.raw_text or existing.raw_text
-                existing.raw_excerpt = generated_item.raw_excerpt or existing.raw_excerpt
-                existing.author = generated_item.author or existing.author
-                existing.published_at = generated_item.published_at or existing.published_at
-                existing.translated_text_path = generated_item.translated_text_path
-                existing.translation_status = generated_item.translation_status
-                existing.process_status = generated_item.process_status
-                existing.summary = existing.summary or generated_item.summary
-                item = existing
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        if container.notion_service.is_configured():
-            item.notion_page_id = container.notion_service.upsert_page(item)
-            db.add(item)
-            db.commit()
-            db.refresh(item)
+        existing = None
+        if generated_item.normalized_url:
+            existing = container.item_service.find_by_normalized_url(db, generated_item.normalized_url)
+        elif generated_item.content_hash:
+            existing = container.item_service.find_by_content_hash(db, generated_item.content_hash)
+        if existing:
+            existing.title = generated_item.title or existing.title
+            existing.raw_text = generated_item.raw_text or existing.raw_text
+            existing.clean_content = generated_item.clean_content or existing.clean_content
+            existing.raw_excerpt = generated_item.raw_excerpt or existing.raw_excerpt
+            existing.author = generated_item.author or existing.author
+            existing.published_at = generated_item.published_at or existing.published_at
+            existing.translated_text_path = generated_item.translated_text_path
+            existing.translation_status = generated_item.translation_status
+            existing.process_status = generated_item.process_status
+            existing.fetch_status = generated_item.fetch_status
+            existing.ai_status = generated_item.ai_status
+            existing.summary = existing.summary or generated_item.summary
+            item = existing
+        container.item_service.save(db, item)
+        item = container.item_service.attempt_notion_sync(db, item)
     except TranslationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return TranslateResponse(
