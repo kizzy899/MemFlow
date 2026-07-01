@@ -19,3 +19,8 @@
 Knowledge Console 的 POST /api/config/xhs 在保存并热重载 Cookie/profile 登录态后，立即调用 fetch_favorites(limit=1)。手动 POST /api/xiaohongshu/test 复用同一读取流程。读取样本只用于确认已进入收藏页，不新增持久化内容字段，也不写入原始或翻译后的用户内容。
 
 保存接口的 data.check 状态转换为：成功读取时 configured；登录态无效时 login_failed；已登录但收藏入口或内容不可用时 favorites_unavailable；浏览器、网络等其他异常时 failed。外部读取失败不回滚已保存的本机配置，错误信息会显示在控制台且不包含 Cookie。
+## Windows 登录稳定性（2026-07-02）
+
+Windows 下 Uvicorn `--reload` 使用的事件循环不支持 Playwright 启动浏览器子进程时，旧实现会抛出无详细信息的 `NotImplementedError`。`fetch_favorites(limit)` 公共 API、返回条目和异常状态不变；服务现在把整段 Playwright 生命周期放入独立工作线程，并显式使用 `ProactorEventLoop`，保证浏览器创建、页面操作和关闭位于同一事件循环。
+
+未新增持久化字段或登录状态。缺少/失效 Cookie 仍进入 `login_failed`，收藏入口不可用仍进入 `favorites_unavailable`，浏览器或系统权限异常进入 `failed` 并写入本机 traceback；不会记录 Cookie。测试覆盖 Windows 工作线程分派和既有登录/收藏状态转换。

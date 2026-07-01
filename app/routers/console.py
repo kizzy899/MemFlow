@@ -77,6 +77,7 @@ async def _read_xhs_favorites(container) -> dict:
     except XiaohongshuFavoritesError as exc:
         return {"status":"favorites_unavailable","message":f"登录成功，但没有读取到收藏页：{exc}","sample_count":0}
     except Exception as exc:
+        logger.exception("Xiaohongshu login check failed")
         return {"status":"failed","message":f"检测失败：{_describe_xhs_exception(exc)}","sample_count":0}
 
 @router.get("/api/config/status")

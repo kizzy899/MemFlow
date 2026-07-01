@@ -1,3 +1,4 @@
+import httpx
 from app.config import Settings
 from app.main import app
 from app.services.notion_service import NotionService
@@ -102,3 +103,25 @@ def test_validate_endpoint_returns_200_for_invalid_diagnostic(monkeypatch) -> No
 
     assert response.status_code == 200
     assert response.json()["success"] is False
+
+def test_validate_falls_back_to_direct_after_transport_error(monkeypatch) -> None:
+    service = NotionService(settings(NOTION_API_KEY="secret", NOTION_DATABASE_ID="database"))
+
+    class FailingDatabases:
+        def retrieve(self, database_id: str):
+            raise httpx.ConnectError("proxy TLS failed")
+
+    primary = FakeClient()
+    primary.databases = FailingDatabases()
+    primary.close = lambda: None
+    direct = FakeClient(valid_properties())
+    direct.closed = False
+    direct.close = lambda: setattr(direct, "closed", True)
+    monkeypatch.setattr(service, "_client", lambda: primary)
+    monkeypatch.setattr(service, "_build_client", lambda mode: direct)
+
+    result = service.validate_database_details()
+
+    assert result["success"] is True
+    assert service._connection_mode == "direct"
+    assert direct.closed is True

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import httpx
+
 from notion_client import Client
 
 from app.config import Settings
@@ -52,6 +54,7 @@ class NotionService:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._connection_mode: str | None = None
 
     def is_configured(self) -> bool:
         return bool(self.settings.notion_api_key and self.settings.notion_database_id)
@@ -76,7 +79,7 @@ class NotionService:
             return {"success": False, "message": "Notion 未配置", "data": base}
 
         try:
-            database = self._client().databases.retrieve(database_id=self.settings.notion_database_id)
+            database = self._retrieve_database_with_fallback()
         except Exception as exc:
             base["error"] = self.humanize_error(exc)
             return {"success": False, "message": base["error"], "data": base}
@@ -188,8 +191,44 @@ class NotionService:
     def _client(self) -> Client:
         if not self.is_configured():
             raise ConfigError("Notion 未配置：缺少 NOTION_API_KEY 或 NOTION_DATABASE_ID")
-        return Client(auth=self.settings.notion_api_key)
+        return self._build_client(self._connection_mode or "configured")
 
+    def _build_client(self, mode: str) -> Client:
+        proxy = self.settings.proxy_url or None
+        trust_env = mode == "configured" and proxy is None
+        if mode == "direct":
+            proxy = None
+            trust_env = False
+        http_client = httpx.Client(
+            proxy=proxy,
+            trust_env=trust_env,
+            timeout=httpx.Timeout(20.0, connect=10.0),
+            transport=httpx.HTTPTransport(retries=2),
+        )
+        return Client(auth=self.settings.notion_api_key, client=http_client)
+
+    def _retrieve_database_with_fallback(self) -> dict[str, Any]:
+        primary = self._client()
+        try:
+            database = primary.databases.retrieve(database_id=self.settings.notion_database_id)
+            self._connection_mode = self._connection_mode or "configured"
+            return database
+        except httpx.TransportError as primary_error:
+            if self._connection_mode == "direct":
+                raise
+            direct = self._build_client("direct")
+            try:
+                database = direct.databases.retrieve(database_id=self.settings.notion_database_id)
+                self._connection_mode = "direct"
+                return database
+            except httpx.TransportError:
+                raise primary_error
+            finally:
+                direct.close()
+        finally:
+            close = getattr(primary, "close", None)
+            if close:
+                close()
     def _build_properties(self, item: ContentItem) -> dict[str, Any]:
         platform_value = getattr(item.source_platform, "value", "") if item.source_platform else ""
         content_type_value = getattr(item.content_type, "value", "") if item.content_type else ""

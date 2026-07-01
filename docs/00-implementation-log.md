@@ -301,3 +301,19 @@
 ### 验证结果
 - 新增后端测试验证保存配置后立即调用收藏读取；既有登录失败、收藏失败和空异常诊断覆盖继续执行。
 - Python compileall 通过；后端完整测试 81 passed；前端 Vitest 5 passed；Vite production build 通过；git diff --check 通过。
+## 2026-07-02：小红书登录与 Notion 连接稳定性
+
+实施顺序：
+1. 复现控制台小红书 `NotImplementedError`，确认 Windows + Uvicorn reload 的 Selector 事件循环无法创建 Playwright 子进程。
+2. 复现 Notion `SSL: UNEXPECTED_EOF_WHILE_READING`，核对 Token/Database ID 已加载，并对比环境代理与直连通道。
+3. 将小红书 Playwright 生命周期迁入独立 Proactor 工作线程；未知异常记录本机 traceback。
+4. 为 Notion 配置连接超时、连接级重试和仅针对 `httpx.TransportError` 的代理到直连降级，并缓存成功通道。
+5. 补充专项测试、模块文档、控制台说明并执行回归。
+
+关键决策：公共 API、SQLite/Notion 持久化字段和状态机均不变；小红书浏览器对象不跨线程/事件循环；Notion 仅对数据库只读探测降级，401/403/404 与字段错误不重试，页面写入不做操作级重放以避免重复。
+
+变更文件：`app/services/xiaohongshu_service.py`、`app/services/notion_service.py`、`app/routers/console.py`、`tests/test_xiaohongshu_service.py`、`tests/test_notion_validate.py`、`docs/09-notion-validation.md`、`docs/17-xiaohongshu-favorites.md`、`docs/18-knowledge-console.md`、`docs/00-implementation-log.md`。`docs/README.md` 已包含 09、17、18 三份模块文档，无需新增索引项。
+
+失败行为：Cookie/登录失败、收藏不可用和未知浏览器异常继续分别映射 `login_failed`、`favorites_unavailable`、`failed`；Notion 两条通道均失败时返回原始代理通道的可读错误，本地条目和 inbox 不删除。
+
+验证结果：专项后端测试 16 passed；真实 Notion 数据库校验由 TLS EOF 自动降级后通过；受控命令沙箱禁止 Chromium 子进程并返回 `WinError 5`，因此真实小红书页面冒烟需在正常启动的本机服务中验证。完整回归：83 passed；`python -m compileall -q app tests` 通过；`git diff --check` 通过。

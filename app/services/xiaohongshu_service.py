@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from typing import Any
 
 from playwright.async_api import BrowserContext, Page, async_playwright
@@ -18,6 +20,21 @@ class XiaohongshuService:
         self.settings = settings
 
     async def fetch_favorites(self, limit: int = 20) -> list[ContentItem]:
+        if os.name == "nt":
+            return await asyncio.to_thread(self._fetch_favorites_in_proactor_thread, limit)
+        return await self._fetch_favorites(limit)
+
+    def _fetch_favorites_in_proactor_thread(self, limit: int) -> list[ContentItem]:
+        loop = asyncio.ProactorEventLoop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(self._fetch_favorites(limit))
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            asyncio.set_event_loop(None)
+            loop.close()
+
+    async def _fetch_favorites(self, limit: int) -> list[ContentItem]:
         if not self.settings.xhs_browser_profile_path and not self.settings.xhs_cookie:
             raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
 
