@@ -24,4 +24,4 @@
 
 功能代码、接口、数据结构或状态流转发生变化时，必须同步更新模块文档、本文索引以及 `00-implementation-log.md`。文档应包含用途、接口或调用方式、数据变化、错误处理和验证方法。
 
-- [17. 小红书收藏同步](17-xiaohongshu-favorites.md)
+- [17. 小红书收藏同步（登录后自动读取）](17-xiaohongshu-favorites.md)

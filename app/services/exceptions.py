@@ -25,3 +25,7 @@ class TranslationError(AppError):
 class XiaohongshuLoginError(AppError):
     pass
 
+
+class XiaohongshuFavoritesError(AppError):
+    pass
+

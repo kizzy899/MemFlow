@@ -36,6 +36,7 @@ export default function App() {
   const [hot, setHot] = useState('暂无项目记忆')
   const [notice, setNotice] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
   const [queueText, setQueueText] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [xhs, setXhs] = useState({ xhs_cookie: '', xhs_username: '', xhs_password: '' })
   const [notion, setNotion] = useState({ notion_token: '', notion_database_id: '' })
 
@@ -56,9 +57,20 @@ export default function App() {
   useEffect(() => {
     if ((task.status === 'success' || task.status === 'failed') && task.task_id) void Promise.allSettled([loadInbox(), loadRecent(), loadHot()])
   }, [task.status, task.task_id, loadInbox, loadRecent, loadHot])
+  useEffect(() => { setSelectedIds(previous => new Set([...previous].filter(id => inbox.items.some(item => item.item_id === id)))) }, [inbox.items])
 
   async function saveXhs(event: FormEvent) {
-    event.preventDefault(); await report(api('/api/config/xhs', { method: 'POST', body: JSON.stringify(xhs) }).then(() => { setXhs({ xhs_cookie: '', xhs_username: '', xhs_password: '' }); return loadConfig() }), '小红书配置已保存')
+    event.preventDefault(); await report(api('/api/config/xhs', { method: 'POST', body: JSON.stringify(xhs) }).then(() => { setXhs({ xhs_cookie: '', xhs_username: '', xhs_password: '' }); return loadConfig() }), '小红书配置已保存，已开始读取收藏页')
+  }
+  async function testXhs() {
+    try {
+      const check = await api<Check>('/api/xiaohongshu/test', { method: 'POST' })
+      setConfig(previous => ({ ...previous, xhs: { ...previous.xhs, check } }))
+      setNotice({ tone: 'good', text: check.message })
+    } catch (error) {
+      await loadConfig()
+      setNotice({ tone: 'bad', text: error instanceof Error ? error.message : '小红书登录检测失败' })
+    }
   }
   async function saveNotion(event: FormEvent) {
     event.preventDefault(); await report(api('/api/config/notion', { method: 'POST', body: JSON.stringify(notion) }).then(() => { setNotion({ notion_token: '', notion_database_id: '' }); return loadConfig() }), 'Notion 配置已保存')
@@ -73,6 +85,16 @@ export default function App() {
   async function deleteItem(itemId: string) {
     if (!window.confirm('确定删除这条待处理内容吗？')) return
     await report(api<Inbox>('/api/inbox/item', { method: 'DELETE', body: JSON.stringify({ item_id: itemId, version: inbox.version }) }).then(setInbox), '已删除')
+  }
+  function toggleSelection(itemId: string) {
+    setSelectedIds(previous => { const next=new Set(previous); if(next.has(itemId)) next.delete(itemId); else next.add(itemId); return next })
+  }
+  function toggleAll() {
+    setSelectedIds(selectedIds.size === inbox.items.length ? new Set() : new Set(inbox.items.map(item => item.item_id)))
+  }
+  async function deleteSelected() {
+    if (!selectedIds.size || !window.confirm(`确定删除选中的 ${selectedIds.size} 条内容吗？`)) return
+    await report(api<Inbox>('/api/inbox/items', { method: 'DELETE', body: JSON.stringify({ item_ids: [...selectedIds], version: inbox.version }) }).then(value => { setInbox(value); setSelectedIds(new Set()) }), `已删除 ${selectedIds.size} 条内容`)
   }
   async function startProcessor() {
     await report(api<Task>('/api/processor/start', { method: 'POST' }).then(setTask), '整理任务已启动')
@@ -89,7 +111,7 @@ export default function App() {
             <label>Cookie<input type="password" value={xhs.xhs_cookie} onChange={e => setXhs({ ...xhs, xhs_cookie: e.target.value })} placeholder={config.xhs.cookie_saved ? `已保存，长度 ${config.xhs.cookie_length}` : '粘贴 XHS_COOKIE'} /></label>
             <label>用户名（可选）<input value={xhs.xhs_username} onChange={e => setXhs({ ...xhs, xhs_username: e.target.value })} placeholder={config.xhs.username_masked || '仅保存，不用于自动登录'} /></label>
             <label>密码（可选）<input type="password" value={xhs.xhs_password} onChange={e => setXhs({ ...xhs, xhs_password: e.target.value })} /></label>
-            <div className="button-row"><button className="button" type="submit">保存小红书配置</button><button className="button secondary" type="button" onClick={() => void report(api('/api/xiaohongshu/test', { method: 'POST' }).then(loadConfig), '登录检测完成')}>测试登录</button><button className="text-button danger" type="button" onClick={() => void clearConfig('xhs')}>清除</button></div>
+            <div className="button-row"><button className="button" type="submit">保存小红书配置</button><button className="button secondary" type="button" onClick={() => void testXhs()}>测试登录</button><button className="text-button danger" type="button" onClick={() => void clearConfig('xhs')}>清除</button></div>
           </form>
           <p className="hint">{config.xhs.check.message}</p>
         </Card>
@@ -108,7 +130,8 @@ export default function App() {
       <div className="work-column">
         <Card title="待整理收件箱" action={<div className="head-actions"><Badge status="processing">{inbox.pending_url_count} 个链接</Badge><button className="text-button" onClick={() => void loadInbox()}>刷新</button></div>}>
           <form onSubmit={appendInbox} className="form-stack"><label>粘贴文字或链接（一次粘贴的文字按一条处理）<textarea rows={6} value={queueText} onChange={e => setQueueText(e.target.value)} placeholder="多个链接可逐行粘贴，保存时会自动用空行分隔&#10;&#10;普通文字无论多少行，都作为一个整理单位" /></label><button className="button" disabled={!queueText.trim()}>加入待整理队列</button></form>
-          <div className="queue-list">{inbox.items.length === 0 ? <p className="empty">队列为空</p> : inbox.items.map(item => <article className="queue-item" key={item.item_id}><div><Badge status={item.status}>{item.status === 'failed' ? '处理失败' : '待处理'}</Badge><p>{item.content}</p>{item.failure_reason && <p className="error-text">{item.failure_reason}</p>}</div><button className="text-button danger" onClick={() => void deleteItem(item.item_id)}>删除</button></article>)}</div>
+          <div className="selection-toolbar"><button className="button secondary compact" type="button" disabled={!inbox.items.length} onClick={toggleAll}>{selectedIds.size === inbox.items.length && inbox.items.length ? '取消全选' : '全选'}</button><span>已选择 {selectedIds.size} 条</span><button className="button danger-button compact" type="button" disabled={!selectedIds.size} onClick={() => void deleteSelected()}>删除选中</button></div>
+          <div className="queue-list">{inbox.items.length === 0 ? <p className="empty">队列为空</p> : inbox.items.map(item => <article className={`queue-item ${selectedIds.has(item.item_id) ? 'selected' : ''}`} key={item.item_id}><label className="select-box"><input type="checkbox" aria-label={`选择 ${item.content.slice(0, 20)}`} checked={selectedIds.has(item.item_id)} onChange={() => toggleSelection(item.item_id)} /></label><div className="queue-content"><Badge status={item.status}>{item.status === 'failed' ? '处理失败' : '待处理'}</Badge><p>{item.content}</p>{item.failure_reason && <p className="error-text">{item.failure_reason}</p>}</div><button className="text-button danger" onClick={() => void deleteItem(item.item_id)}>删除</button></article>)}</div>
         </Card>
 
         <Card title="自动整理任务" action={<Badge status={task.status}>{({ idle: '空闲', processing: '处理中', success: '成功', failed: '失败' } as const)[task.status]}</Badge>}>

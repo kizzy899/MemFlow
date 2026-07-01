@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import Any
@@ -7,7 +7,7 @@ from playwright.async_api import BrowserContext, Page, async_playwright
 
 from app.config import Settings
 from app.models.content_item import ContentItem, ContentType, SourcePlatform
-from app.services.exceptions import XiaohongshuLoginError
+from app.services.exceptions import XiaohongshuFavoritesError, XiaohongshuLoginError
 
 
 class XiaohongshuService:
@@ -31,7 +31,7 @@ class XiaohongshuService:
                 await self._open_favorites(page)
                 items = await self._extract_items(page, limit)
                 if not items:
-                    raise XiaohongshuLoginError("未读取到收藏内容，请确认当前登录态可以访问收藏页。")
+                    raise XiaohongshuFavoritesError("已进入个人收藏页，但没有识别到收藏内容；可能收藏为空或页面结构已变化。")
                 return items
             finally:
                 await context.close()
@@ -69,7 +69,7 @@ class XiaohongshuService:
             await favorites_tab.click()
             await page.wait_for_timeout(2000)
         except Exception as exc:
-            raise XiaohongshuLoginError("个人主页中未找到可访问的收藏入口。") from exc
+            raise XiaohongshuFavoritesError("已进入个人主页，但没有找到可访问的收藏入口；可能页面结构已变化或该入口不可见。") from exc
 
     def _normalize_profile_url(self, href: str | None) -> str | None:
         if not href:

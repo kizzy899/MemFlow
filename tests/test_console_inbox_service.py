@@ -24,3 +24,11 @@ def test_append_keeps_each_text_paste_atomic_and_separates_url_list(tmp_path):
     assert [item["urls"] for item in links["items"][-2:]] == [["https://example.com/a"],["https://example.com/b"]]
     raw=(tmp_path/"inbox"/"links.md").read_text(encoding="utf-8")
     assert "https://example.com/a\n\nhttps://example.com/b" in raw
+
+def test_batch_delete_is_single_version_checked_transaction(tmp_path):
+    (tmp_path/"inbox").mkdir(); (tmp_path/"inbox"/"links.md").write_text("https://a.example\n\nhttps://b.example\n\nhttps://c.example\n",encoding="utf-8")
+    service=ConsoleInboxService(tmp_path); snap=service.snapshot()
+    result=service.delete_many([snap["items"][0]["item_id"],snap["items"][2]["item_id"]],snap["version"])
+    assert len(result["items"]) == 1
+    assert result["items"][0]["urls"] == ["https://b.example"]
+    with pytest.raises(ArchiveRunError): service.delete_many([result["items"][0]["item_id"]],snap["version"])

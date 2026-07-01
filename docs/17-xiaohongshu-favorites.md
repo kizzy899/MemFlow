@@ -1,4 +1,4 @@
-﻿# 小红书收藏同步
+# 小红书收藏同步
 
 ## 公共 API
 `POST /api/xiaohongshu/sync` 接收 `limit`（默认 20），返回 `status` 和 `synced_count`，使用 `XHS_COOKIE` 或 `XHS_BROWSER_PROFILE_PATH` 登录态。
@@ -10,7 +10,12 @@
 无新增字段。沿用 `title`、`source_url`、`source_platform=xiaohongshu`、`content_type=post`、`raw_text`、`raw_excerpt`、`external_id`。Cookie 和账号信息不入库。
 
 ## 失败行为
-缺少或失效登录态、个人主页地址非法、找不到收藏入口、收藏为空时抛出 `XiaohongshuLoginError`，API 返回 HTTP 400；推荐流不再被当作收藏。
+缺少或失效登录态、个人主页入口不可识别时抛出 `XiaohongshuLoginError`；已经进入个人主页但找不到收藏入口，或已经进入收藏页但没有解析到内容时抛出 `XiaohongshuFavoritesError`。同步 API 对两类失败均返回 HTTP 400；控制台检测 API 使用 `login_failed` 与 `favorites_unavailable` 明确区分。推荐流不再被当作收藏。
 
 ## 测试覆盖
-覆盖个人主页 URL 白名单、收藏标签点击和入口缺失失败，并执行真实登录态只读冒烟测试。
+覆盖个人主页 URL 白名单、收藏标签点击、登录失败和登录成功但收藏入口不可读，并执行真实登录态只读冒烟测试。
+## 登录后自动读取
+
+Knowledge Console 的 POST /api/config/xhs 在保存并热重载 Cookie/profile 登录态后，立即调用 fetch_favorites(limit=1)。手动 POST /api/xiaohongshu/test 复用同一读取流程。读取样本只用于确认已进入收藏页，不新增持久化内容字段，也不写入原始或翻译后的用户内容。
+
+保存接口的 data.check 状态转换为：成功读取时 configured；登录态无效时 login_failed；已登录但收藏入口或内容不可用时 favorites_unavailable；浏览器、网络等其他异常时 failed。外部读取失败不回滚已保存的本机配置，错误信息会显示在控制台且不包含 Cookie。

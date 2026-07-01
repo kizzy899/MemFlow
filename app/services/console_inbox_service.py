@@ -64,6 +64,24 @@ class ConsoleInboxService:
         if pure_urls:
             return "\n\n".join(nonempty)
         return re.sub(r"\s+", " ", value)
+
+    def delete_many(self, item_ids: list[str], version: str) -> dict[str, Any]:
+        selected = set(item_ids)
+        if not selected:
+            raise ValueError("请至少选择一条待处理内容")
+        with FileLock(self.lock):
+            current = self.snapshot()
+            if current["version"] != version:
+                raise ArchiveRunError("inbox 已变化，请刷新后重试")
+            blocks = parse_inbox(current["raw_content"])
+            existing = {self._id(index, block) for index, block in enumerate(blocks)}
+            missing = selected - existing
+            if missing:
+                raise KeyError("部分待处理内容不存在，请刷新后重试")
+            shutil.copy2(self.path, self.backup)
+            remaining = [block for index, block in enumerate(blocks) if self._id(index, block) not in selected]
+            self._write(render_inbox(remaining))
+        return self.snapshot()
     def _write(self, content: str) -> None:
         temp = self.path.with_name(f".links.{uuid.uuid4().hex}.tmp")
         temp.write_text(content, encoding="utf-8"); os.replace(temp, self.path)

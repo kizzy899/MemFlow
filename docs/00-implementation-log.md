@@ -242,3 +242,62 @@
 - 纯 URL 列表改为每条 URL 之间写入一个空行，继续形成独立队列项。
 - 已有 inbox 不自动合并；新增定向测试覆盖混合文字与多链接列表。
 - 同步更新控制台输入提示、模块文档和实施日志，未改变归档失败保留与原子写入规则。
+
+## Knowledge Console inbox 勾选批量删除（2026-07-01）
+
+### 实施顺序与决策
+1. 在 inbox 服务中增加基于快照版本的多 ID 删除，并复用文件锁、备份与原子替换。
+2. 新增批量 DELETE API；前端增加复选框、全选/取消全选、计数与删除选中按钮，同时保留单项删除。
+3. 补齐服务事务测试和前端交互测试，构建生产资源并更新文档。
+4. 批量删除采用全有或全无：任何 ID 缺失或版本过期均不修改 inbox，避免部分删除。
+
+### 文件、API、字段与状态
+- 修改 `app/services/console_inbox_service.py`、`app/routers/console.py`、`frontend/src/App.tsx`、`frontend/src/styles.css` 及对应测试。
+- 新增 `DELETE /api/inbox/items`，请求字段为 `item_ids` 与 `version`；响应为删除后的 inbox 快照。
+- 未新增持久化字段或业务状态；仍使用 item_id 定位段落、version 进行乐观并发校验。
+- 409 表示版本冲突，404 表示选中项目不存在，422 表示空选择；失败时不发生部分删除。
+
+### 验证结果
+- `python -m pytest -q -p no:cacheprovider`：77 passed。
+- Vitest：1 file、4 tests passed，新增全选、请求负载和删除后空队列覆盖。
+- `npm run build`：通过，194 modules；JS 271.50 kB、CSS 5.79 kB。
+
+## 小红书登录检测结果细分（2026-07-02）
+
+### 实施顺序与决策
+1. 将登录态失败与已登录但收藏入口/内容不可读拆为两种服务异常。
+2. 控制台检测 API 返回 `login_failed` 或 `favorites_unavailable`，并在消息开头给出明确中文结论。
+3. 前端直接展示检测业务消息，失败后重新读取后端检测状态，避免只呈现 HTTP 200。
+
+### API、字段、状态与失败行为
+- 修改 `POST /api/xiaohongshu/test` 的业务状态说明；HTTP 传输成功仍为 200，业务成功由 `success` 判定。
+- `configured` 表示登录且成功读取收藏；`login_failed` 表示 Cookie/登录态失败；`favorites_unavailable` 表示已登录但收藏入口或内容不可读；`failed` 表示其他异常。
+- 未新增持久化字段；检测结果仅保存在配置服务内存状态。同步 API 仍以 HTTP 400 返回上述可恢复失败。
+- 页面结构变化或空收藏不会再误报为 Cookie 登录失败。
+
+### 变更与验证
+- 修改小红书服务异常、控制台与同步路由、Knowledge Console 提示逻辑及 Python/React 测试。
+- 更新 README、小红书模块文档、Knowledge Console 模块文档和实施日志。- 验证：Python 79 passed；Vitest 5 passed；Vite production build 通过（194 modules）。
+## 小红书空异常提示修复（2026-07-02）
+
+- 原因：部分浏览器/异步超时异常的 `str(exc)` 为空，前端只能收到“检测失败：”。
+- 修改：新增异常描述兜底；超时显示网络、代理和页面访问建议，其他空异常显示异常类型，同时在本机启动终端记录 traceback。
+- API 与持久化：`POST /api/xiaohongshu/test` 路径、字段和状态不变；未新增持久化字段。
+- 失败行为：业务失败仍不修改 Cookie、不执行收藏同步，也不向前端或日志主动输出 Cookie。
+- 验证：完整 Python 测试 80 passed；compileall 与 `git diff --check` 通过。
+## 小红书登录后自动读取收藏（2026-07-02）
+
+### 实施顺序与决策
+1. 复查收藏抓取服务、控制台配置保存和手动登录检测调用链。
+2. 将“读取一条收藏样本”抽成共享流程，保存小红书配置并热重载登录态后立即调用；手动测试复用该流程。
+3. 控制台继续先持久化配置，再记录读取结果，避免外部页面失败导致本地登录信息丢失；不启用用户名/密码自动登录。
+
+### 文件、API、字段与状态
+- 修改 app/routers/console.py、frontend/src/App.tsx、tests/test_console_api.py、docs/17-xiaohongshu-favorites.md、docs/18-knowledge-console.md、docs/README.md 和本日志。
+- POST /api/config/xhs 请求字段不变；保存后立即调用 fetch_favorites(limit=1)，响应 data.check 为 configured、login_failed、favorites_unavailable 或 failed。
+- 不新增数据库或 .env 字段，不持久化收藏样本和原始用户内容；完整 /api/xiaohongshu/sync 的处理状态流不变。
+- 登录失败、收藏入口/内容不可用和其他读取异常分别返回明确状态；配置已保存事实与外部读取结果同时呈现。
+
+### 验证结果
+- 新增后端测试验证保存配置后立即调用收藏读取；既有登录失败、收藏失败和空异常诊断覆盖继续执行。
+- Python compileall 通过；后端完整测试 81 passed；前端 Vitest 5 passed；Vite production build 通过；git diff --check 通过。

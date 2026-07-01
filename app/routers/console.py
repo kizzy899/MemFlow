@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Optional
@@ -14,8 +15,10 @@ from app.config import get_settings
 from app.console_security import require_loopback
 from app.db import get_db
 from app.models.content_item import ContentItem, NotionSyncStatus
-from app.services.exceptions import ConfigError, NotionServiceError, XiaohongshuLoginError
+from app.services.exceptions import ConfigError, NotionServiceError, XiaohongshuFavoritesError, XiaohongshuLoginError
 from app.services.link_archive_service import ArchiveRunError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["console"], dependencies=[Depends(require_loopback)])
 
@@ -39,6 +42,20 @@ class InboxDeleteRequest(BaseModel):
     item_id: str
     version: str
 
+class InboxBatchDeleteRequest(BaseModel):
+    item_ids: list[str] = Field(min_length=1)
+    version: str
+
+
+def _describe_xhs_exception(exc: Exception) -> str:
+    detail = " ".join(str(exc).split())
+    if detail:
+        return detail
+    exception_name = type(exc).__name__
+    if "timeout" in exception_name.lower():
+        return "页面加载或浏览器操作超时，请检查网络、代理和小红书页面是否可访问。"
+    return f"{exception_name}（异常未提供详细信息，请查看启动终端日志。）"
+
 
 def _container(request: Request): return request.app.state.container
 
@@ -51,16 +68,29 @@ def _reload(container) -> None:
     get_settings.cache_clear(); container.reload_settings(get_settings())
 
 
+async def _read_xhs_favorites(container) -> dict:
+    try:
+        items = await container.xiaohongshu_service.fetch_favorites(limit=1)
+        return {"status":"configured","message":"登录成功：已开始读取收藏页内容。","sample_count":len(items)}
+    except XiaohongshuLoginError as exc:
+        return {"status":"login_failed","message":f"登录失败：{exc}","sample_count":0}
+    except XiaohongshuFavoritesError as exc:
+        return {"status":"favorites_unavailable","message":f"登录成功，但没有读取到收藏页：{exc}","sample_count":0}
+    except Exception as exc:
+        return {"status":"failed","message":f"检测失败：{_describe_xhs_exception(exc)}","sample_count":0}
+
 @router.get("/api/config/status")
 def config_status(request: Request):
     return {"success": True, "message": "查询成功", "data": _container(request).config_service.status()}
 
 
 @router.post("/api/config/xhs")
-def save_xhs(payload: XhsConfigRequest, request: Request):
+async def save_xhs(payload: XhsConfigRequest, request: Request):
     container=_container(request); _ensure_idle(container)
     container.config_service.update({"XHS_COOKIE":payload.xhs_cookie,"XHS_USERNAME":payload.xhs_username,"XHS_PASSWORD":payload.xhs_password}); _reload(container)
-    return {"success":True,"message":"小红书配置已保存","data":container.config_service.status()["xhs"]}
+    result = await _read_xhs_favorites(container)
+    container.config_service.xhs_check = result
+    return {"success":True,"message":f"小红书配置已保存；{result['message']}","data":container.config_service.status()["xhs"]}
 
 
 @router.delete("/api/config/xhs")
@@ -85,13 +115,7 @@ def clear_notion(request: Request):
 @router.post("/api/xiaohongshu/test")
 async def test_xhs(request: Request):
     container=_container(request)
-    try:
-        items=await container.xiaohongshu_service.fetch_favorites(limit=1)
-        result={"status":"configured","message":"登录态有效，可以访问收藏","sample_count":len(items)}
-    except XiaohongshuLoginError as exc:
-        result={"status":"cookie_may_expire","message":str(exc),"sample_count":0}
-    except Exception as exc:
-        result={"status":"failed","message":str(exc),"sample_count":0}
+    result = await _read_xhs_favorites(container)
     container.config_service.xhs_check=result
     return {"success":result["status"]=="configured","message":result["message"],"data":result}
 
@@ -130,6 +154,19 @@ def delete_inbox(payload: InboxDeleteRequest, request: Request):
     except KeyError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     return {"success":True,"message":"已删除待处理内容","data":data}
 
+
+
+@router.delete("/api/inbox/items")
+def delete_inbox_items(payload: InboxBatchDeleteRequest, request: Request):
+    try:
+        data = _container(request).console_inbox_service.delete_many(payload.item_ids, payload.version)
+    except ArchiveRunError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"success": True, "message": f"已删除 {len(payload.item_ids)} 条待处理内容", "data": data}
 
 @router.post("/api/processor/start",status_code=202)
 def start_processor(request: Request):
