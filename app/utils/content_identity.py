@@ -16,6 +16,8 @@ TRACKING_QUERY_PARAMETERS = {
     "share_from",
     "share_source",
     "timestamp",
+    "fbclid",
+    "gclid",
 }
 
 
@@ -37,7 +39,10 @@ def normalize_url(url: str) -> str:
         if key.lower() not in TRACKING_QUERY_PARAMETERS
     ]
     query.sort()
-    return urlunsplit((scheme, netloc, parts.path or "/", urlencode(query, doseq=True), ""))
+    path = parts.path or "/"
+    if path != "/":
+        path = path.rstrip("/") or "/"
+    return urlunsplit((scheme, netloc, path, urlencode(query, doseq=True), ""))
 
 
 def normalize_text(text: str) -> str:
@@ -46,3 +51,14 @@ def normalize_text(text: str) -> str:
 
 def content_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
+_URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+_URL_TRAILING_PUNCTUATION = ".,;:!?，。；：！？、)]}）】》"
+
+
+def extract_first_url(text: str | None) -> str | None:
+    """Return the first HTTP(S) URL in pasted text without sentence punctuation."""
+    match = _URL_PATTERN.search(text or "")
+    if not match:
+        return None
+    value = match.group(0).rstrip(_URL_TRAILING_PUNCTUATION)
+    return value or None

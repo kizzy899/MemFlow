@@ -109,3 +109,64 @@ curl http://127.0.0.1:8000/api/items/<UUID>
 python -m pytest -q
 python -m compileall -q app skills tests
 ```
+
+## 第三阶段：长期知识库增强
+
+MemFlow 会标准化 AI 生成的平台、内容类型、分类、关键词和重要程度，避免 Notion 标签发散。一级分类固定为：AI、编程开发、英语学习、金融财务、论文写作、工具效率、项目灵感、生活经验、职业发展、其他。
+
+同步新 Notion 页面时会写入摘要、核心观点、行动建议、分类信息和原始信息正文；正文格式异常时降级为仅写数据库属性。
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/items/sync-notion/batch" -H "Content-Type: application/json" -d '{"status":"all_unsynced","limit":50}'
+curl "http://127.0.0.1:8000/api/export/json?limit=100"
+curl "http://127.0.0.1:8000/api/export/markdown?limit=100"
+```
+
+PowerShell：
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/api/items/sync-notion/batch" `
+  -H "Content-Type: application/json" `
+  -d "{\"status\":\"all_unsynced\",\"limit\":50}"
+```
+
+固定分类是长期可维护的标签治理；无法映射的二级分类为“未分类”，可在 taxonomy aliases 中扩展。Markdown 默认不含原文；需要原文时使用 JSON 导出并传 `include_raw_content=true`。
+### 文本中的来源链接与 Agent 面试标签
+
+文本采集会自动提取正文中的首个 HTTP(S) 链接。包含 `xiaohongshu.com` 或 `xhslink.com` 的文本会记录为小红书来源；Agent 面试、求职、岗位和上岸复盘内容会规范为二级分类及关键词标签 `Agent面试`。已有无链接的重复文本再次提交时会回填链接并重新尝试 Notion 同步。
+## 自动链接阅读与知识库归档
+
+将链接逐行或按段落写入 `inbox/links.md`，然后使用 API 或 CLI 归档：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/inbox/archive-links"
+.\.venv\Scripts\python.exe -m app.tasks.archive_links
+```
+
+任务支持网页、直链 PDF 和公开 GitHub 仓库 README。只有 SQLite 与 Notion 完整写入成功后才删除输入原文；失败会保留原文并更新原因。重复链接按 normalized_url 在 SQLite 和 Notion 双重判断。首次运行会自动为 Notion 数据库创建 URL 类型的“规范链接”属性。
+
+每次运行前生成 `inbox/.links.md.bak`，逐条状态写入 `logs/link-archive.jsonl`。成功批次只更新 `hot.md` 的托管区块，不覆盖人工内容。详细字段、状态和恢复行为见 `docs/17-link-inbox-archive.md`。
+## Knowledge Console
+
+安装并构建前端：
+
+```powershell
+cd frontend
+npm install
+npm run build
+cd ..
+.\start.ps1
+```
+
+浏览器打开 `http://127.0.0.1:8000/console`。开发模式可在另一个终端运行 `cd frontend && npm run dev`，访问 `http://127.0.0.1:5173/console/`。
+
+控制台提供小红书与 Notion 配置、登录/连接检测、inbox 队列、后台整理进度、最近 Notion 结果和 hot.md。敏感输入保存后立即清空，后端只返回脱敏状态；配置和控制 API 仅允许本机访问。
+
+前端验证：
+
+```powershell
+cd frontend
+npm test -- --run
+npm run build
+```
+
+详细接口、状态和安全行为见 `docs/18-knowledge-console.md`。

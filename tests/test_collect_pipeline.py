@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db import Base
+from app.utils.content_identity import content_hash, normalize_text
 from app.models.content_item import ContentItem, NotionSyncStatus, ProcessStatus, SourcePlatform
 from app.services.ai_service import AnalysisResult
 from app.services.content_pipeline_service import ContentPipelineService
@@ -174,3 +175,38 @@ def test_tracking_parameters_do_not_create_duplicate_url(db: Session) -> None:
 
     assert first.id == second.id
     assert ai.calls == 1
+
+def test_text_collection_extracts_xiaohongshu_url_and_agent_interview(db: Session) -> None:
+    pipeline = ContentPipelineService(FakeParser(), FakeAI(), ItemService(FakeNotion()))
+    item = pipeline.process_collect(db, "text", "AI Agent 岗上岸复盘 https://xhslink.com/o/abc。")
+
+    assert item.source_url == "https://xhslink.com/o/abc"
+    assert item.normalized_url == "https://xhslink.com/o/abc"
+    assert item.source_platform == SourcePlatform.XIAOHONGSHU
+    assert item.category_level_2 == "Agent面试"
+    assert "Agent面试" in item.tags_list()
+
+def test_duplicate_historical_text_backfills_link_and_agent_interview(db: Session) -> None:
+    text = "AI Agent 面试上岸复盘 https://xhslink.com/o/history"
+    historical = ContentItem(
+        input_type="text",
+        content_hash=content_hash(normalize_text(text)),
+        raw_text=text,
+        title="Agent 岗复盘",
+        category_level_2="Agent开发",
+        tags="AI Agent",
+        process_status=ProcessStatus.COMPLETED,
+        notion_sync_status=NotionSyncStatus.SYNCED,
+    )
+    db.add(historical)
+    db.commit()
+    pipeline = ContentPipelineService(FakeParser(), FakeAI(), ItemService(FakeNotion()))
+
+    result = pipeline.process_collect(db, "text", text)
+
+    assert result.id == historical.id
+    assert result.source_url == "https://xhslink.com/o/history"
+    assert result.source_platform == SourcePlatform.XIAOHONGSHU
+    assert result.category_level_2 == "Agent面试"
+    assert "Agent面试" in result.tags_list()
+    assert result.notion_sync_status == NotionSyncStatus.PENDING

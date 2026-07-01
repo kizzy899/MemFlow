@@ -45,6 +45,7 @@ try {
     }
 
     Write-Host "Starting MemFlow at http://${BindAddress}:$Port"
+    Write-Host "Knowledge Console: http://${BindAddress}:$Port/console"
     & $python @uvicornArgs
     if ($LASTEXITCODE -ne 0) {
         throw "MemFlow exited with code $LASTEXITCODE."

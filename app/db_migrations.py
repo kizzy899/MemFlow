@@ -14,6 +14,12 @@ SQLITE_COLUMNS = {
     "normalized_url": "VARCHAR(2048)",
     "content_hash": "VARCHAR(64)",
     "clean_content": "TEXT NOT NULL DEFAULT ''",
+    "key_concepts": "TEXT NOT NULL DEFAULT '[]'",
+    "related_entities": "TEXT NOT NULL DEFAULT '{}'",
+    "knowledge_relations": "TEXT NOT NULL DEFAULT '[]'",
+    "archive_markdown": "TEXT NOT NULL DEFAULT ''",
+    "source_type": "VARCHAR(50) NOT NULL DEFAULT ''",
+    "archived_at": "DATETIME",
     "fetch_status": "VARCHAR(7) NOT NULL DEFAULT 'skipped'",
     "ai_status": "VARCHAR(7) NOT NULL DEFAULT 'skipped'",
 }
@@ -57,6 +63,9 @@ def run_sqlite_migrations(engine: Engine) -> None:
 
 
 def _backfill_content_identity(connection) -> None:
+    # Recompute URL identities so new canonicalization rules apply to historical rows.
+    # NULL first avoids transient unique-index collisions; the oldest row wins.
+    connection.execute(text("UPDATE content_items SET normalized_url=NULL WHERE source_url IS NOT NULL"))
     rows = connection.execute(
         text(
             "SELECT id, source_url, source_platform, raw_text, process_status, "

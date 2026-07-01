@@ -25,7 +25,7 @@ def test_old_sqlite_schema_is_upgraded_idempotently(tmp_path) -> None:
     run_sqlite_migrations(engine)
 
     columns = {column["name"] for column in inspect(engine).get_columns("content_items")}
-    assert {"input_type", "normalized_url", "content_hash", "clean_content", "fetch_status", "ai_status"} <= columns
+    assert {"input_type", "normalized_url", "content_hash", "clean_content", "fetch_status", "ai_status", "key_concepts", "related_entities", "knowledge_relations", "archive_markdown", "source_type", "archived_at"} <= columns
     with engine.connect() as connection:
         rows = connection.execute(
             text(
@@ -43,3 +43,4 @@ def test_old_sqlite_schema_is_upgraded_idempotently(tmp_path) -> None:
     assert by_id["text-id"]["clean_content"] == " same   text "
     assert "ix_content_items_normalized_url" in indexes
     assert "ix_content_items_content_hash" in indexes
+    engine.dispose()

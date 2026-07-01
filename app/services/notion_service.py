@@ -8,6 +8,8 @@ from notion_client import Client
 from app.config import Settings
 from app.models.content_item import ContentItem
 from app.services.exceptions import ConfigError, NotionServiceError
+from app.services.notion_page_service import build_notion_page_children
+from app.services.archive_note_service import build_archive_children
 
 
 class NotionService:
@@ -124,13 +126,65 @@ class NotionService:
             if item.notion_page_id:
                 page = client.pages.update(page_id=item.notion_page_id, properties=properties)
             else:
-                page = client.pages.create(
-                    parent={"database_id": self.settings.notion_database_id}, properties=properties
-                )
+                try:
+                    page = client.pages.create(
+                        parent={"database_id": self.settings.notion_database_id},
+                        properties=properties,
+                        children=build_notion_page_children(item),
+                    )
+                except Exception:
+                    page = client.pages.create(
+                        parent={"database_id": self.settings.notion_database_id}, properties=properties
+                    )
             return str(page["id"]), str(page.get("url", item.notion_page_url or ""))
         except Exception as exc:
             raise NotionServiceError(self.humanize_error(exc)) from exc
 
+
+    def ensure_archive_schema(self) -> None:
+        client = self._client()
+        try:
+            database = client.databases.retrieve(database_id=self.settings.notion_database_id)
+            prop = database.get("properties", {}).get("规范链接")
+            if prop and prop.get("type") == "url":
+                return
+            if prop:
+                raise NotionServiceError("Notion 字段「规范链接」必须是 URL 类型")
+            client.databases.update(
+                database_id=self.settings.notion_database_id,
+                properties={"规范链接": {"url": {}}},
+            )
+        except NotionServiceError:
+            raise
+        except Exception as exc:
+            raise NotionServiceError(self.humanize_error(exc)) from exc
+
+    def find_page_by_normalized_url(self, normalized_url: str) -> dict[str, str] | None:
+        try:
+            response = self._client().databases.query(
+                database_id=self.settings.notion_database_id,
+                filter={"property": "规范链接", "url": {"equals": normalized_url}},
+                page_size=1,
+            )
+            pages = response.get("results", [])
+            if not pages:
+                return None
+            return {"id": str(pages[0].get("id", "")), "url": str(pages[0].get("url", ""))}
+        except Exception as exc:
+            raise NotionServiceError(self.humanize_error(exc)) from exc
+
+    def create_archive_page(self, item: ContentItem) -> tuple[str, str]:
+        properties = self._build_properties(item)
+        properties["规范链接"] = {"url": item.normalized_url or None}
+        try:
+            page = self._client().pages.create(
+                parent={"database_id": self.settings.notion_database_id},
+                properties=properties,
+                children=build_archive_children(item),
+            )
+            return str(page["id"]), str(page.get("url", ""))
+        except Exception as exc:
+            raise NotionServiceError(self.humanize_error(exc)) from exc
     def _client(self) -> Client:
         if not self.is_configured():
             raise ConfigError("Notion 未配置：缺少 NOTION_API_KEY 或 NOTION_DATABASE_ID")

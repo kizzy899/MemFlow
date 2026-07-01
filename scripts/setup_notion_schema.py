@@ -72,6 +72,9 @@ def build_schema_patch(existing_properties: dict):
         "原始链接": {
             "url": {}
         },
+        "规范链接": {
+            "url": {}
+        },
         "来源平台": {
             "select": {
                 "options": build_select_options([
@@ -123,6 +126,7 @@ def build_schema_patch(existing_properties: dict):
             "select": {
                 "options": build_select_options([
                     "Agent开发",
+                    "Agent面试",
                     "大模型应用",
                     "Prompt工程",
                     "AI工具",

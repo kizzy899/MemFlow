@@ -19,9 +19,25 @@ from app.schemas.content import (
 from app.services.container import ServiceContainer
 from app.services.exceptions import ConfigError, NotionServiceError
 from app.services.item_service import ItemPage
+from app.services.taxonomy_service import normalize_category_level_1, normalize_category_level_2, normalize_content_type, normalize_importance, normalize_keywords, normalize_platform
 
 
 router = APIRouter(prefix="/api/items", tags=["items"])
+
+
+@router.post("/sync-notion/batch")
+def batch_sync_notion(payload: dict, request: Request, db: Session = Depends(get_db)):
+    container: ServiceContainer = request.app.state.container
+    if not container.notion_service.is_configured():
+        return _error(503, "Notion 未配置：缺少 NOTION_API_KEY 或 NOTION_DATABASE_ID")
+    try:
+        data = container.notion_sync_service.batch_sync_items_to_notion(
+            db, payload.get("status"), payload.get("item_ids"), payload.get("limit", 20), payload.get("force", False)
+        )
+    except ValueError as exc:
+        return _error(422, str(exc))
+    message = "批量同步完成，部分失败" if data["failed"] else "批量同步完成"
+    return {"success": True, "message": message, "data": data}
 
 
 @router.get("", response_model=ItemListResponse)
@@ -116,12 +132,12 @@ def _summary(item: ContentItem) -> ItemSummary:
         title=item.title,
         source_url=item.source_url or "",
         input_type=item.input_type.value,
-        platform=item.source_platform.value,
-        content_type=item.content_type.value,
-        category_level_1=item.category_level_1,
-        category_level_2=item.category_level_2,
-        keywords=item.tags_list(),
-        importance=item.importance.value,
+        platform=normalize_platform(item.source_platform.value, item.source_url, item.input_type.value),
+        content_type=normalize_content_type(item.content_type.value),
+        category_level_1=normalize_category_level_1(item.category_level_1),
+        category_level_2=normalize_category_level_2(item.category_level_2),
+        keywords=normalize_keywords(item.tags_list()),
+        importance=normalize_importance(item.importance.value),
         notion_sync_status=item.notion_sync_status.value,
         notion_page_url=item.notion_page_url or "",
         created_at=item.created_at,
@@ -137,15 +153,15 @@ def _detail(item: ContentItem) -> ItemDetail:
         source_url=item.source_url or "",
         normalized_url=item.normalized_url or "",
         title=item.title,
-        platform=item.source_platform.value,
-        content_type=item.content_type.value,
-        category_level_1=item.category_level_1,
-        category_level_2=item.category_level_2,
+        platform=normalize_platform(item.source_platform.value, item.source_url, item.input_type.value),
+        content_type=normalize_content_type(item.content_type.value),
+        category_level_1=normalize_category_level_1(item.category_level_1),
+        category_level_2=normalize_category_level_2(item.category_level_2),
         summary=item.summary,
         key_points=item.core_points_list(),
         action_items=item.action_items_list(),
-        keywords=item.tags_list(),
-        importance=item.importance.value,
+        keywords=normalize_keywords(item.tags_list()),
+        importance=normalize_importance(item.importance.value),
         language=item.original_language,
         is_translated=item.is_translated,
         fetch_status=item.fetch_status.value,

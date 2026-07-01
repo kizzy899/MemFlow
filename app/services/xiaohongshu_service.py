@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Any
@@ -11,7 +11,8 @@ from app.services.exceptions import XiaohongshuLoginError
 
 
 class XiaohongshuService:
-    FAVORITES_URL = "https://www.xiaohongshu.com/explore"
+    HOME_URL = "https://www.xiaohongshu.com/explore"
+    BASE_URL = "https://www.xiaohongshu.com"
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -24,9 +25,10 @@ class XiaohongshuService:
             context = await self._create_context(playwright)
             try:
                 page = await context.new_page() if not context.pages else context.pages[0]
-                await page.goto(self.FAVORITES_URL, wait_until="networkidle", timeout=30000)
+                await page.goto(self.HOME_URL, wait_until="domcontentloaded", timeout=30000)
                 if "login" in page.url.lower():
                     raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
+                await self._open_favorites(page)
                 items = await self._extract_items(page, limit)
                 if not items:
                     raise XiaohongshuLoginError("未读取到收藏内容，请确认当前登录态可以访问收藏页。")
@@ -48,6 +50,35 @@ class XiaohongshuService:
             await context.add_cookies(cookies)
         return context
 
+    async def _open_favorites(self, page: Page) -> None:
+        me_link = page.locator("a[href^='/user/profile/']").filter(has_text="我").first
+        try:
+            await me_link.wait_for(state="visible", timeout=10000)
+            profile_href = await me_link.get_attribute("href")
+        except Exception as exc:
+            raise XiaohongshuLoginError("未找到当前账号的个人主页入口，请确认登录态有效。") from exc
+        profile_url = self._normalize_profile_url(profile_href)
+        if not profile_url:
+            raise XiaohongshuLoginError("当前账号的个人主页入口无效。")
+        await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
+        if "login" in page.url.lower():
+            raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
+        favorites_tab = page.get_by_text("收藏", exact=True).first
+        try:
+            await favorites_tab.wait_for(state="visible", timeout=15000)
+            await favorites_tab.click()
+            await page.wait_for_timeout(2000)
+        except Exception as exc:
+            raise XiaohongshuLoginError("个人主页中未找到可访问的收藏入口。") from exc
+
+    def _normalize_profile_url(self, href: str | None) -> str | None:
+        if not href:
+            return None
+        if href.startswith(f"{self.BASE_URL}/user/profile/"):
+            return href
+        if href.startswith("/user/profile/"):
+            return f"{self.BASE_URL}{href}"
+        return None
     async def _extract_items(self, page: Page, limit: int) -> list[ContentItem]:
         selectors = [
             "section.note-item",
@@ -98,7 +129,7 @@ class XiaohongshuService:
         if href.startswith("http"):
             return href
         if href.startswith("/"):
-            return f"https://www.xiaohongshu.com{href}"
+            return f"{self.BASE_URL}{href}"
         return None
 
     def _parse_cookie_header(self, cookie_header: str) -> list[dict[str, Any]]:

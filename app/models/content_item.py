@@ -111,6 +111,11 @@ class ContentItem(Base):
     tags: Mapped[str] = mapped_column(String(500), default="")
     core_points: Mapped[str] = mapped_column(Text, default="[]")
     action_items: Mapped[str] = mapped_column(Text, default="[]")
+    key_concepts: Mapped[str] = mapped_column(Text, default="[]")
+    related_entities: Mapped[str] = mapped_column(Text, default="{}")
+    knowledge_relations: Mapped[str] = mapped_column(Text, default="[]")
+    archive_markdown: Mapped[str] = mapped_column(Text, default="")
+    source_type: Mapped[str] = mapped_column(String(50), default="")
     importance: Mapped[Importance] = mapped_column(SqlEnum(Importance), default=Importance.MEDIUM)
     original_language: Mapped[str] = mapped_column(String(50), default="zh-CN")
     is_translated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -141,9 +146,10 @@ class ContentItem(Base):
     external_id: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def tags_list(self) -> list[str]:
-        return [tag.strip() for tag in self.tags.split(",") if tag.strip()]
+        return [tag.strip() for tag in (self.tags or "").split(",") if tag.strip()]
 
     def core_points_list(self) -> list[str]:
         return self._json_list(self.core_points)

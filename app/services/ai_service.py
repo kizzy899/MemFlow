@@ -82,7 +82,7 @@ class AIService:
             "只输出 JSON，不要 Markdown 或解释。必须包含字段：title, summary, core_points, "
             "action_items, content_type, category_level_1, category_level_2, keywords, importance, "
             "original_language, is_translated。summary、core_points、action_items、分类和关键词必须使用中文；"
-            "不要编造原文没有的信息。title 必须重新概括内容主题，使用简洁中文短语，不照抄网页标题，"
+            "不要编造原文没有的信息。summary 必须用 3-5 句话概括核心内容。title 必须重新概括内容主题，使用简洁中文短语，不照抄网页标题，"
             "不添加网站名、作者、仓库路径或副标题，最多 20 个汉字（或 40 个字符）。"
             f"category_level_1 只能是：{', '.join(ALLOWED_CATEGORIES)}。"
             "content_type 只能是 article、video、note、tutorial、paper、code_project、inspiration、tool、"

@@ -13,7 +13,15 @@
 - [测试与验收](10-testing-and-verification.md)
 - [项目启动脚本](11-project-startup.md)
 - [简短标题生成](12-concise-title-generation.md)
+- [标签体系标准化](13-taxonomy-standardization.md)
+- [Notion 页面正文排版](14-notion-page-layout.md)
+- [批量 Notion 同步](15-batch-sync.md)
+- [JSON 与 Markdown 导出备份](16-export-and-backup.md)
+- [自动链接阅读与知识库归档](17-link-inbox-archive.md)
+- [Knowledge Console 可视化控制台](18-knowledge-console.md)
 
 ## 维护规则
 
 功能代码、接口、数据结构或状态流转发生变化时，必须同步更新模块文档、本文索引以及 `00-implementation-log.md`。文档应包含用途、接口或调用方式、数据变化、错误处理和验证方法。
+
+- [17. 小红书收藏同步](17-xiaohongshu-favorites.md)

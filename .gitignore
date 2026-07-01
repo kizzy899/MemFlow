@@ -1,4 +1,4 @@
-__pycache__/
+﻿__pycache__/
 .pytest_cache/
 .venv/
 .env
@@ -8,4 +8,12 @@ files/raw/*
 files/translated/*
 !files/raw/.gitkeep
 !files/translated/.gitkeep
-
+logs/
+hot.md
+inbox/links.md
+inbox/.links.md.bak
+inbox/.links.lock
+inbox/.links.*.tmp
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

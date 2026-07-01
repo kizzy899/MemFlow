@@ -20,7 +20,8 @@ from app.models.content_item import (
 from app.services.ai_service import AIService, AnalysisResult
 from app.services.item_service import ItemService
 from app.services.web_parser_service import WebParserService
-from app.utils.content_identity import content_hash, normalize_text, normalize_url
+from app.utils.content_identity import content_hash, extract_first_url, normalize_text, normalize_url
+from app.services.taxonomy_service import normalize_category_level_1, normalize_category_level_2, normalize_keywords
 
 
 class ContentPipelineService:
@@ -95,16 +96,38 @@ class ContentPipelineService:
     def _process_text(self, db: Session, text: str) -> ContentItem:
         cleaned = normalize_text(text)
         digest = content_hash(cleaned)
+        source_url = extract_first_url(text)
+        normalized_source_url = normalize_url(source_url) if source_url else None
         existing = self.item_service.find_by_content_hash(db, digest)
         if existing:
+            if source_url and not existing.source_url:
+                linked_item = self.item_service.find_by_normalized_url(db, normalized_source_url or "")
+                if not linked_item or linked_item.id == existing.id:
+                    existing.source_url = source_url
+                    existing.normalized_url = normalized_source_url
+                    existing.source_platform = self.detect_platform(normalized_source_url or source_url)
+                    existing.category_level_2 = normalize_category_level_2(
+                        existing.category_level_2,
+                        " ".join([existing.title, existing.summary, existing.tags, existing.raw_text]),
+                    )
+                    if existing.category_level_2 == "Agent面试":
+                        existing.tags = ",".join(normalize_keywords(["Agent面试", *existing.tags_list()]))
+                    existing.notion_sync_status = NotionSyncStatus.PENDING
+                    self.item_service.save(db, existing)
             if existing.process_status == ProcessStatus.COMPLETED and existing.notion_sync_status != NotionSyncStatus.SYNCED:
                 return self.item_service.attempt_notion_sync(db, existing)
             return existing
+        if normalized_source_url:
+            existing_url = self.item_service.find_by_normalized_url(db, normalized_source_url)
+            if existing_url:
+                return existing_url
 
         item = ContentItem(
             input_type=InputType.TEXT,
             content_hash=digest,
-            source_platform=SourcePlatform.MANUAL,
+            source_url=source_url,
+            normalized_url=normalized_source_url,
+            source_platform=self.detect_platform(normalized_source_url) if normalized_source_url else SourcePlatform.MANUAL,
             content_type=ContentType.NOTE,
             raw_text=text,
             clean_content=cleaned,
@@ -117,7 +140,7 @@ class ContentPipelineService:
         )
         self.item_service.save(db, item)
         try:
-            analysis = self.ai_service.analyze("", "", cleaned)
+            analysis = self.ai_service.analyze(source_url or "", "", cleaned)
             self._apply_analysis(item, analysis)
             item.ai_status = StageStatus.SUCCESS
             item.process_status = ProcessStatus.COMPLETED
@@ -167,10 +190,16 @@ class ContentPipelineService:
         item.title = analysis.title
         item.content_type = ContentType(analysis.content_type)
         item.summary = analysis.summary
-        item.category = analysis.category_level_1
-        item.category_level_1 = analysis.category_level_1
-        item.category_level_2 = analysis.category_level_2
-        item.tags = ",".join(analysis.keywords)
+        item.category = normalize_category_level_1(analysis.category_level_1)
+        item.category_level_1 = item.category
+        item.category_level_2 = normalize_category_level_2(
+            analysis.category_level_2,
+            " ".join([analysis.title, analysis.summary, *analysis.keywords, item.clean_content or item.raw_text]),
+        )
+        keywords = analysis.keywords
+        if item.category_level_2 == "Agent面试":
+            keywords = ["Agent面试", *keywords]
+        item.tags = ",".join(normalize_keywords(keywords))
         item.core_points = json.dumps(analysis.core_points, ensure_ascii=False)
         item.action_items = json.dumps(analysis.action_items, ensure_ascii=False)
         item.importance = Importance(analysis.importance)
