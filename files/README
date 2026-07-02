@@ -1,0 +1,4 @@
+files 目录用于存放服务生成的文件输出：
+
+raw：保存抓取到的原始内容，例如网页 HTML
+translated：保存翻译后的 Markdown 文档
