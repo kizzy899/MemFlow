@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.db import Base, engine
 from app.db_migrations import run_sqlite_migrations
-from app.routers import collect, console, export, inbox, items, notion, translate, web_links, xiaohongshu
+from app.routers import agent_search, collect, console, export, inbox, items, notion, translate, web_links, xiaohongshu
 from app.services.container import ServiceContainer
 from app.services.exceptions import NotionServiceError
 
@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
         except NotionServiceError as exc:
             logger.warning("Notion validation failed during startup: %s", exc)
     app.state.container = container
+    await container.xhs_login_service.restore()
     yield
 
 
@@ -39,6 +40,7 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(collect.router)
 app.include_router(web_links.router)
 app.include_router(xiaohongshu.router)
+app.include_router(agent_search.router)
 app.include_router(translate.router)
 app.include_router(notion.router)
 app.include_router(items.router)

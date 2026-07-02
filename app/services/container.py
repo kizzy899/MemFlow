@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.config import Settings
 from app.services.ai_service import AIService
+from app.services.agent_search_service import AgentSearchService
 from app.services.classifier_service import ClassifierService
 from app.services.config_service import ConfigService
 from app.services.console_inbox_service import ConsoleInboxService
@@ -20,12 +21,14 @@ from app.services.processor_manager import ProcessorManager
 from app.services.translation_service import TranslationService
 from app.services.web_parser_service import WebParserService
 from app.services.xiaohongshu_service import XiaohongshuService
+from app.services.xhs_login_service import XiaohongshuLoginService
 
 
 class ServiceContainer:
     def __init__(self, settings: Settings) -> None:
         self.root = Path(__file__).resolve().parents[2]
         self.config_service = ConfigService(self.root, settings)
+        self.agent_search_service = AgentSearchService(self.root)
         self.console_inbox_service = ConsoleInboxService(self.root)
         self.processor_manager: ProcessorManager | None = None
         self._build(settings)
@@ -48,7 +51,8 @@ class ServiceContainer:
         self.notion_sync_service = NotionSyncService(self.item_service)
         self.export_service = ExportService()
         self.translation_service = TranslationService(self.web_parser_service, self.file_storage_service)
-        self.xiaohongshu_service = XiaohongshuService(settings)
+        self.xhs_login_service = XiaohongshuLoginService(self.root, settings.memflow_auth_key, settings.chrome_cdp_url)
+        self.xiaohongshu_service = XiaohongshuService(settings, self.xhs_login_service, self.agent_search_service)
         self.content_pipeline_service = ContentPipelineService(self.web_parser_service, self.ai_service, self.item_service)
         self.link_reader_service = LinkReaderService(settings, self.web_parser_service)
         self.link_archive_ai_service = LinkArchiveAIService(settings)

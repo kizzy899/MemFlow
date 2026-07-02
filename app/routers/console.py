@@ -23,12 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["console"], dependencies=[Depends(require_loopback)])
 
 
-class XhsConfigRequest(BaseModel):
-    xhs_cookie: str = ""
-    xhs_username: str = ""
-    xhs_password: str = ""
-
-
 class NotionConfigRequest(BaseModel):
     notion_token: str = ""
     notion_database_id: str = ""
@@ -85,21 +79,6 @@ def config_status(request: Request):
     return {"success": True, "message": "查询成功", "data": _container(request).config_service.status()}
 
 
-@router.post("/api/config/xhs")
-async def save_xhs(payload: XhsConfigRequest, request: Request):
-    container=_container(request); _ensure_idle(container)
-    container.config_service.update({"XHS_COOKIE":payload.xhs_cookie,"XHS_USERNAME":payload.xhs_username,"XHS_PASSWORD":payload.xhs_password}); _reload(container)
-    result = await _read_xhs_favorites(container)
-    container.config_service.xhs_check = result
-    return {"success":True,"message":f"小红书配置已保存；{result['message']}","data":container.config_service.status()["xhs"]}
-
-
-@router.delete("/api/config/xhs")
-def clear_xhs(request: Request):
-    container=_container(request); _ensure_idle(container); container.config_service.clear({"XHS_COOKIE","XHS_USERNAME","XHS_PASSWORD"}); _reload(container)
-    return {"success":True,"message":"小红书配置已清除","data":container.config_service.status()["xhs"]}
-
-
 @router.post("/api/config/notion")
 def save_notion(payload: NotionConfigRequest, request: Request):
     container=_container(request); _ensure_idle(container)
@@ -111,14 +90,6 @@ def save_notion(payload: NotionConfigRequest, request: Request):
 def clear_notion(request: Request):
     container=_container(request); _ensure_idle(container); container.config_service.clear({"NOTION_API_KEY","NOTION_DATABASE_ID"}); _reload(container)
     return {"success":True,"message":"Notion 配置已清除","data":container.config_service.status()["notion"]}
-
-
-@router.post("/api/xiaohongshu/test")
-async def test_xhs(request: Request):
-    container=_container(request)
-    result = await _read_xhs_favorites(container)
-    container.config_service.xhs_check=result
-    return {"success":result["status"]=="configured","message":result["message"],"data":result}
 
 
 @router.post("/api/notion/test")

@@ -317,3 +317,80 @@
 失败行为：Cookie/登录失败、收藏不可用和未知浏览器异常继续分别映射 `login_failed`、`favorites_unavailable`、`failed`；Notion 两条通道均失败时返回原始代理通道的可读错误，本地条目和 inbox 不删除。
 
 验证结果：专项后端测试 16 passed；真实 Notion 数据库校验由 TLS EOF 自动降级后通过；受控命令沙箱禁止 Chromium 子进程并返回 `WinError 5`，因此真实小红书页面冒烟需在正常启动的本机服务中验证。完整回归：83 passed；`python -m compileall -q app tests` 通过；`git diff --check` 通过。
+## 2026-07-02：小红书 Web 扫码认证中心
+
+实施顺序：先记录 `plans/xhs-qr-auth.md`，随后建立通用认证协议、状态管理与加密存储；接入官方网页 Playwright 二维码；将收藏抓取改为使用 Provider 会话；迁移 `/api/xhs`；增加扫码和账号管理视图；最后更新测试与文档。
+
+关键决策：不逆向私有接口；单用户单登录流程；Fernet 密钥由 `MEMFLOW_AUTH_KEY` 提供；Cookie/storage state 不进入前端和日志；旧 XHS 环境变量、配置 API 与 `/api/xiaohongshu/*` 不兼容保留。
+
+持久化与状态：新增忽略提交的 `data/cookies/xiaohongshu.json` 加密信封，不新增数据库字段。状态为 idle、checking、waiting_scan、scanned、confirming、authenticated、expired、cancelled、failed、reauth_required；失败返回 code、message、detail、retryable。
+
+变更文件：认证核心位于 `app/services/auth/` 与 `app/services/xhs_login_service.py`；API 和抓取集成位于 `app/routers/xiaohongshu.py`、`app/services/xiaohongshu_service.py`；控制台位于 `frontend/src/`；同时更新配置、依赖、测试、README 和 docs。
+
+验证结果：Python compileall 和 OpenAPI 路由检查通过；后端 85 passed；前端 Vitest 5 passed；Vite production build 通过（194 modules）；`git diff --check` 通过。真实小红书扫码依赖本机网络、Chromium 和有效 App 账号，未在自动化环境执行。
+## 2026-07-02：修复扫码页二维码未弹出
+
+复现 `QR_NOT_FOUND` 后确认小红书首页不会始终自动展示登录弹窗。登录服务改为主动点击可见登录入口，扩展二维码 image/canvas 选择器，并以可见登录容器截图兜底；失败响应只附带页面 URL。专项测试 6 passed，compileall 与 `git diff --check` 通过。
+## 2026-07-02：识别小红书 IP 风控响应
+
+真实二维码请求被官方登录页以 `error_code=300012` 重定向，确认是当前出口 IP 风控而非二维码 DOM 变化。登录服务新增 `RISK_CONTROL` 映射并将其标记为不可重试，detail 仅保留错误码，避免泄露风控 URL 参数；测试补充风控信息脱敏。
+## 2026-07-02：新增现有 Chrome CDP 认证 Provider
+
+实施顺序：确认 9222/9223/9515 当前均未监听；增加 `CHROME_CDP_URL`；实现 `POST /api/xhs/login/chrome`；验证真实 Chrome 的小红书 Cookie 并加密保存 storage state；将收藏抓取切换为 CDP 默认上下文的临时标签；更新前端连接入口、测试及流程文档。
+
+关键决策：CDP 只允许本机地址；不关闭用户 Chrome 或既有标签；收藏抓取直接使用真实 Chrome，不再把 CDP 会话转交无头浏览器；退出登录仅删除 MemFlow 会话。新增错误 `CDP_UNAVAILABLE`、`CDP_NO_CONTEXT`、`CHROME_NOT_LOGGED_IN`。
+
+变更文件：认证与抓取服务、`/api/xhs` 路由、配置与示例环境、Knowledge Console、后端/前端测试、`scripts/start_chrome_cdp.ps1`、README、docs 索引及 `docs/20-chrome-cdp-auth-flow.md`。
+
+验证：后端 87 passed；前端 Vitest 5 passed；Vite production build 通过（194 modules）；compileall 通过。发现 Chrome 新授权服务占用 9222 但不提供 `/json/version`，专用脚本调整到 9223；真实 Chrome/151 已在 9223 返回 WebSocket debugger URL。账号连接需用户在专用窗口登录并重启 MemFlow 后完成。
+## 2026-07-02：收藏同步前端参数面板
+
+账号管理页新增收藏读取数量（1–100）、执行按钮、处理中状态及结果提示；前端直接调用 `POST /api/xhs/sync`，不生成或执行 PowerShell。后端为 `limit` 增加 1–100 校验。测试覆盖输入值进入 JSON 请求体和越界返回 422。
+
+验证：后端 88 passed；前端 Vitest 6 passed；Vite production build 通过（194 modules）。
+## 2026-07-02：整理小红书收藏读取操作 Runbook
+
+将实际操作收敛为 `docs/21-xhs-favorites-operations-runbook.md`：记录专用 Chrome/CDP 启动与验证、MemFlow 启停、账号连接、前端数量参数、收藏读取、日常顺序、端口冲突、登录失效、IP 风控及安全边界。文档已加入 `docs/README.md`。
+## 2026-07-02：调整 Console 收藏与项目记忆布局
+
+将收藏读取参数面板从账号页移动到 Console 首页左栏，未登录时禁用执行；将首页完整 `hot.md` 卡片替换为入口按钮，并新增 `/console/memory` 独立安全渲染页面。更新响应式样式、前端测试和 Knowledge Console 模块文档。
+
+验证：前端 Vitest 7 passed；Vite production build 通过（194 modules）；`git diff --check` 通过。
+## 2026-07-02：新增 Agent Search Skill
+
+实施顺序：尝试通过 skill-installer 查询同名 Skill，但 curated/experimental 与 GitHub 查询均受网络 TLS/搜索故障阻断；按 skill-creator 规范初始化并验证本地实现；因 `.agents` 为只读，最终放入 MemFlow 既有 `skills/agent-search`；安装 Python 3.13 兼容的 yt-dlp、imageio-ffmpeg、RapidOCR、ONNX Runtime；实现文章链接分类、视频抽帧 OCR、CLI 和本机 API。
+
+关键决策：本地优先且不上传视频；当前只识别画面可见文字，不声称支持语音转写；下载内容使用忽略提交的临时目录；本地视频 API 路径限制在工作区；链接分类保留标签和上下文供人工核对。
+
+变更文件：`skills/agent-search/`、`app/services/agent_search_service.py`、`app/routers/agent_search.py`、容器与主路由、依赖与 gitignore、`tests/test_agent_search_skill.py`、README、docs 索引及本模块文档。
+
+验证：合成视频真实 OCR、文章分类及 API 专项 4 passed；完整后端 94 passed；CLI 冒烟提取 2 个资源并正确分类为 project/skill；OpenAPI 已注册 `/api/agent-search/extract`；Skill quick validation、compileall 与 `git diff --check` 通过。安装过程中确认旧 rapidocr-onnxruntime 不支持 Python 3.13，改用 rapidocr 3.9.1 + onnxruntime 1.27.0。
+## inbox 纯文字整理与按钮修复（2026-07-02）
+
+实施顺序：先确认按钮由 `pending_url_count` 错误控制，再将 inbox 总项数暴露为 `pending_item_count`，随后实现纯文字的哈希去重、AI 分析、知识增强、Notion 写入和失败保留，最后补充前后端回归测试与文档。
+
+关键决策：保留 `pending_url_count` 兼容字段；纯文字使用 `content_hash` 而非伪造 URL 去重，`source_url` 与 `normalized_url` 为空；任务的 `remaining` 表示剩余整理项；仅 Notion 完整写入或确认本地已同步后删除 inbox 原文。
+
+变更文件：`app/services/console_inbox_service.py`、`app/services/link_archive_service.py`、`frontend/src/App.tsx`、`frontend/src/App.test.tsx`、`tests/test_console_inbox_service.py`、`tests/test_link_archive_service.py`、`docs/17-link-inbox-archive.md`、`docs/18-knowledge-console.md`、`docs/00-implementation-log.md`。未新增数据库字段或迁移，复用既有 `ContentItem.content_hash`、文本输入枚举及状态字段。
+
+验证：后端定向测试 11 项、完整后端测试 94 项、前端测试 8 项与生产构建均通过；`git diff --check` 通过。失败行为覆盖 AI/Notion 失败时保留纯文字、记录失败状态与可重试路径。
+## RawBlock 前端设计系统落地（2026-07-02）
+
+实施顺序：读取用户提供的 RawBlock 规范并写入根目录 `DESIGN.md`；盘点 Dashboard、认证页与项目记忆页的现有组件；重构全局设计 token、双栏布局和组件状态；补充待处理项/链接数联合展示；最后更新模块文档、索引并执行前端测试和生产构建。
+
+关键决策：不引入装饰图片或图标；以 3px/5px 黑色边框和字号对比替代圆角、渐变及阴影；纯蓝色仅用于链接；保留现有 React 组件、API 和交互逻辑，响应式断点维持桌面双栏和移动端单栏。
+
+变更文件：`DESIGN.md`、`frontend/src/styles.css`、`frontend/src/App.tsx`、`frontend/index.html`、`docs/18-knowledge-console.md`、`docs/README.md`、`docs/00-implementation-log.md`。未新增或变更持久化字段、公共 API、任务状态和失败行为。
+
+验证结果：前端 Vitest 与 Vite production build 通过；`git diff --check` 通过。外部字体不可用时由本地字体栈降级，不阻断页面渲染或操作。
+## 小红书内容优先 AI 整理规范（2026-07-03）
+
+实施顺序：确认收藏同步仅读取卡片文字；将收藏详情页与视频源接入现有 Agent Search OCR；把 OCR 全文、资源链接和失败标记加入整理上下文；增加小红书专用 AI 规则；允许推荐资源清单超过 5 项；让已有收藏以新抓取内容重新分析；最后补充专项测试和文档。
+
+关键决策：视频以 1 秒间隔、最多 1800 帧尽量覆盖画面文字；不引入音频转写能力或伪称读取声音；推荐类输出收敛为一句概括和 `名称｜完整网页链接｜极简介绍` 清单；作者与社交指标不进入分析；提取不到时显式标记而非静默降级。已有笔记重新同步以应用新规范。
+
+变更文件：`app/services/xiaohongshu_service.py`、`app/services/container.py`、`app/services/content_pipeline_service.py`、`app/services/ai_service.py`、`tests/test_xiaohongshu_service.py`、`tests/test_collect_pipeline.py`、`tests/test_analysis_result.py`、`docs/17-xiaohongshu-favorites.md`、`docs/22-agent-search-skill.md`、`docs/00-implementation-log.md`。`docs/README.md` 已索引 17 与 22，无需新增条目。
+
+公共 API 与数据库 schema 不变。复用 `raw_text`、`source_type`、`content_type`、`author`、AI/处理/Notion 状态字段；视频文件和帧不持久化。失败行为包括详情读取失败、视频源不可下载、OCR 空结果、OCR 异常、AI 失败及 Notion 失败，均有明确标记或既有状态。
+
+验证结果：专项测试 27 项、完整后端回归 101 项与 Python compileall 均通过；`git diff --check` 通过。

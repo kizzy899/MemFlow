@@ -210,3 +210,34 @@ def test_duplicate_historical_text_backfills_link_and_agent_interview(db: Sessio
     assert result.category_level_2 == "Agent面试"
     assert "Agent面试" in result.tags_list()
     assert result.notion_sync_status == NotionSyncStatus.PENDING
+
+def test_xiaohongshu_existing_item_is_reanalyzed_with_fresh_video_ocr(db: Session) -> None:
+    old = ContentItem(
+        source_url="https://www.xiaohongshu.com/explore/video-note",
+        normalized_url="https://www.xiaohongshu.com/explore/video-note",
+        source_platform=SourcePlatform.XIAOHONGSHU,
+        title="旧标题",
+        raw_text="旧卡片文字",
+        author="不应保留的作者",
+        process_status=ProcessStatus.COMPLETED,
+        notion_sync_status=NotionSyncStatus.SYNCED,
+    )
+    db.add(old); db.commit()
+    incoming = ContentItem(
+        source_url=old.source_url,
+        source_platform=SourcePlatform.XIAOHONGSHU,
+        title="视频推荐",
+        content_type="video",
+        source_type="小红书视频（视频文字提取成功）",
+        raw_text="[视频文字提取成功：OCR 共 2 个有效片段]\n工具 Alpha https://alpha.example",
+        raw_excerpt="OCR",
+        external_id="video-note",
+    )
+    ai = FakeAI()
+    pipeline = ContentPipelineService(FakeParser(), ai, ItemService(FakeNotion()))
+    result = pipeline.process_xiaohongshu_item(db, incoming)
+    assert result.id == old.id
+    assert ai.calls == 1
+    assert "工具 Alpha" in result.raw_text
+    assert result.author == ""
+    assert result.content_type.value == "video"

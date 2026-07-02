@@ -74,3 +74,10 @@
 真实 CLI 在一次连接成功时完成了 `ensure_archive_schema` 并正常退出。随后独立读取数据库验证“规范链接”字段时，3 次均出现 `[SSL: UNEXPECTED_EOF_WHILE_READING]`。该错误来自当前代理/TLS 链路，与业务断言、数据库字段或 inbox 文件事务无关。
 
 安全结论：Notion 网络失败时任务不会删除原文；失败链接会保留并记录 `failed_notion`。网络恢复后重新执行 API 或 CLI 即可复测。建议将 `api.notion.com` 设为代理直连或修复 Python/httpx 的代理 TLS 转发后，再执行一次非空测试链接验收。
+## 纯文字整理（2026-07-02）
+
+`inbox/links.md` 的每个无链接段落也是一个待处理项。任务以 `InputType.TEXT` 创建 `ContentItem`，将原文写入 `raw_text` 与 `clean_content`，以原文 SHA-256 写入唯一字段 `content_hash`，来源平台为 `MANUAL`，且 `source_url`、`normalized_url` 保持为空。随后复用链接归档的 AI 分析、知识关联、Markdown 构建及 Notion 页面写入流程。
+
+状态流转为 `PROCESSING / SKIPPED / PENDING`（处理、抓取、AI、Notion 初始状态），AI 成功后进入 `COMPLETED / SUCCESS`，Notion 成功后进入 `SYNCED` 并从 inbox 删除。同一 `content_hash` 已同步时返回 `skipped_duplicate`；已完成 AI 但 Notion 曾失败时直接重试 Notion，不重复分析。AI 或 Notion 失败返回既有 `failed_parse` 或 `failed_notion` 状态，原文保留并刷新失败说明。
+
+`GET /api/inbox` 新增 `pending_item_count`，表示链接项与纯文字项的总数；`pending_url_count` 保留为链接数量，兼容已有调用方。归档结果中的 `remaining` 改为剩余待处理项数。测试覆盖纯文字成功归档、持久化字段、Notion 失败保留、控制台按钮无链接时可用，以及原有链接/多链接原子处理回归。

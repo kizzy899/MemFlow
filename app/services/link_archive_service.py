@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -14,7 +15,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.models.content_item import ContentItem, ContentType, Importance, InputType, NotionSyncStatus, ProcessStatus, StageStatus
+from app.models.content_item import ContentItem, ContentType, Importance, InputType, NotionSyncStatus, ProcessStatus, SourcePlatform, StageStatus
 from app.services.ai_service import AIService
 from app.services.archive_note_service import build_archive_markdown, parse_json
 from app.services.item_service import ItemService
@@ -121,24 +122,27 @@ class LinkArchiveService:
                 changed = False; progress_made = False; output: list[InboxBlock] = []
                 for block in blocks:
                     urls = block.urls
-                    if not urls:
-                        output.append(block); continue
                     block_results: list[dict[str, Any]] = []
-                    for url in urls:
-                        normalized = self._safe_normalize(url)
-                        if normalized in result_cache:
-                            block_results.append(result_cache[normalized])
+                    sources = [(url, False) for url in urls] if urls else [(block.source_text, True)]
+                    for source, is_text in sources:
+                        if not source:
                             continue
-                        attempted.add(normalized); progress_made = True
-                        if progress: progress("processing", {"current_url": url})
-                        result, item = self._process_url(db, url, normalized)
+                        url = "" if is_text else source
+                        cache_key = f"text:{self._text_digest(source)}" if is_text else self._safe_normalize(url)
+                        normalized = "" if is_text else cache_key
+                        if cache_key in result_cache:
+                            block_results.append(result_cache[cache_key])
+                            continue
+                        attempted.add(cache_key); progress_made = True
+                        if progress: progress("processing", {"current_url": source[:200]})
+                        result, item = self._process_text(db, source) if is_text else self._process_url(db, url, normalized)
                         if progress: progress("result", result)
-                        result_cache[normalized] = result
+                        result_cache[cache_key] = result
                         block_results.append(result); results.append(result); self._log(run_id, result)
                         if item and result["status"] == "processed": successes.append(item)
                     failed = [entry for entry in block_results if entry["status"].startswith("failed_")]
                     if failed:
-                        reason = "；".join(f"{entry['original_url']}：{entry['message']}" for entry in failed)
+                        reason = "；".join(f"{entry['original_url'] or '纯文字'}：{entry['message']}" for entry in failed)
                         output.append(block.with_failure(reason, datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")))
                         changed = True
                     elif block_results and all(entry["status"] in {"processed", "skipped_duplicate"} for entry in block_results):
@@ -147,7 +151,7 @@ class LinkArchiveService:
                         output.append(block)
                 if changed: self._atomic_write(render_inbox(output))
                 if not progress_made: break
-            remaining = sum(len(block.urls) for block in parse_inbox(self.inbox.read_text(encoding="utf-8-sig")))
+            remaining = len(parse_inbox(self.inbox.read_text(encoding="utf-8-sig")))
             hot_updated = bool(successes)
             if hot_updated: self._update_hot(successes, results, remaining)
         counts = {status: sum(x["status"] == status for x in results) for status in ("processed", "skipped_duplicate", "failed_fetch", "failed_parse", "failed_notion")}
@@ -201,6 +205,34 @@ class LinkArchiveService:
         except Exception as exc:
             return self._fail(db, item, original, normalized, "failed_parse", f"AI 整理失败：{exc}", fetch=False)
         return self._write_notion(db, item, original, normalized)
+
+    def _process_text(self, db: Session, text: str) -> tuple[dict[str, Any], ContentItem | None]:
+        digest = self._text_digest(text)
+        item = self.item_service.find_by_content_hash(db, digest)
+        if item and item.notion_sync_status == NotionSyncStatus.SYNCED:
+            return self._result("", "", "skipped_duplicate", "SQLite 中已有相同文字归档", item), item
+        if item and item.archive_markdown and item.ai_status == StageStatus.SUCCESS:
+            return self._write_notion(db, item, "", "")
+        if not item:
+            item = ContentItem(input_type=InputType.TEXT, content_hash=digest, source_platform=SourcePlatform.MANUAL, raw_text=text, clean_content=text, source_type="text", process_status=ProcessStatus.PROCESSING, fetch_status=StageStatus.SKIPPED, ai_status=StageStatus.SKIPPED, notion_sync_status=NotionSyncStatus.PENDING)
+            self.item_service.save(db, item)
+        try:
+            analysis = self.ai.analyze("", item.title, item.clean_content)
+            item.title = analysis.title; item.summary = analysis.summary
+            item.core_points = json.dumps(analysis.core_points, ensure_ascii=False); item.action_items = json.dumps(analysis.action_items, ensure_ascii=False)
+            item.category_level_1 = normalize_category_level_1(analysis.category_level_1); item.category = item.category_level_1
+            item.category_level_2 = normalize_category_level_2(analysis.category_level_2, item.clean_content)
+            item.tags = ",".join(normalize_keywords(analysis.keywords)); item.content_type = ContentType(analysis.content_type)
+            item.importance = Importance(analysis.importance); item.original_language = analysis.original_language; item.is_translated = analysis.is_translated
+            enrichment = self.archive_ai.enrich(item.title, item.clean_content, self._candidates(db, item))
+            item.key_concepts = json.dumps([x.model_dump() for x in enrichment.key_concepts], ensure_ascii=False)
+            item.related_entities = enrichment.entities.model_dump_json()
+            item.knowledge_relations = json.dumps([x.model_dump() for x in enrichment.knowledge_relations], ensure_ascii=False)
+            item.ai_status = StageStatus.SUCCESS; item.process_status = ProcessStatus.COMPLETED; item.archived_at = datetime.now(timezone.utc)
+            item.archive_markdown = build_archive_markdown(item); item.error_message = ""; self.item_service.save(db, item)
+        except Exception as exc:
+            return self._fail(db, item, "", "", "failed_parse", f"AI 整理失败：{exc}", fetch=False)
+        return self._write_notion(db, item, "", "")
 
     def _write_notion(self, db: Session, item: ContentItem, original: str, normalized: str) -> tuple[dict[str, Any], ContentItem]:
         try:
@@ -259,6 +291,10 @@ class LinkArchiveService:
     def _safe_normalize(url: str) -> str:
         try: return normalize_url(url)
         except ValueError: return url
+
+    @staticmethod
+    def _text_digest(text: str) -> str:
+        return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
 
     @staticmethod
     def _result(original: str, normalized: str, status: str, message: str, item: ContentItem | None = None, page_url: str | None = None) -> dict[str, Any]:

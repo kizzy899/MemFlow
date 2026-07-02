@@ -11,7 +11,7 @@ from app.config import Settings
 
 
 class ConfigService:
-    ALLOWED = {"XHS_COOKIE", "XHS_USERNAME", "XHS_PASSWORD", "NOTION_API_KEY", "NOTION_DATABASE_ID"}
+    ALLOWED = {"NOTION_API_KEY", "NOTION_DATABASE_ID"}
 
     def __init__(self, root: Path, settings: Settings) -> None:
         self.root = root
@@ -52,14 +52,6 @@ class ConfigService:
     def status(self) -> dict[str, Any]:
         s = self.settings
         return {
-            "xhs": {
-                "configured": bool(s.xhs_cookie or s.xhs_browser_profile_path),
-                "cookie_saved": bool(s.xhs_cookie),
-                "cookie_length": len(s.xhs_cookie),
-                "username_saved": bool(s.xhs_username),
-                "username_masked": self._mask(s.xhs_username),
-                "check": self.xhs_check,
-            },
             "notion": {
                 "configured": bool(s.notion_api_key and s.notion_database_id),
                 "token_saved": bool(s.notion_api_key),

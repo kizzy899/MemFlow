@@ -9,6 +9,9 @@ files/translated/*
 !files/raw/.gitkeep
 !files/translated/.gitkeep
 logs/
+data/cookies/
+data/chrome-cdp-profile/
+data/agent-search-tmp/
 hot.md
 inbox/links.md
 inbox/.links.md.bak

@@ -4,7 +4,7 @@ import json
 from typing import Literal
 
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from app.config import Settings
@@ -15,7 +15,7 @@ from app.services.exceptions import AIServiceError, ConfigError
 class AnalysisResult(BaseModel):
     title: str = Field(min_length=1, max_length=40)
     summary: str = Field(min_length=1, max_length=2000)
-    core_points: list[str] = Field(min_length=1, max_length=5)
+    core_points: list[str] = Field(min_length=1, max_length=50)
     action_items: list[str] = Field(max_length=5)
     content_type: Literal[
         "article",
@@ -45,7 +45,7 @@ class AnalysisResult(BaseModel):
 
     @field_validator("core_points", "action_items", "keywords", mode="before")
     @classmethod
-    def clean_lists(cls, values: object) -> list[str]:
+    def clean_lists(cls, values: object, info: ValidationInfo) -> list[str]:
         if not isinstance(values, list):
             raise ValueError("value must be a JSON array")
         cleaned: list[str] = []
@@ -56,12 +56,22 @@ class AnalysisResult(BaseModel):
                 continue
             seen.add(item.lower())
             cleaned.append(item[:500])
-            if len(cleaned) >= 5:
+            limit = 50 if info.field_name == "core_points" else 5
+            if len(cleaned) >= limit:
                 break
         return cleaned
 
 
 class AIService:
+    XIAOHONGSHU_RULES = (
+        "这是小红书内容。完全忽略作者姓名、账号、点赞数、收藏数、评论数、粉丝数和关注数，只分析正文与视频文字。正文含视频文字提取标记时 content_type 必须为 video。"
+        "如果正文包含视频 OCR 文字，必须覆盖全部 OCR 内容后再总结，按主题分点，不得只取开头。"
+        "如果出现‘视频文字提取为空’或‘视频文字提取失败’标记，必须在 summary 中明确写出该视频文字未能提取，不能假装已看完。"
+        "如果属于工具、网站、应用、项目或资源推荐，采用精简资源清单：summary 只写一句概括；"
+        "core_points 逐项输出‘名称｜完整网页链接｜一句极简介绍’，不得省略正文或 OCR 中出现的任何资源名称和 HTTP(S) 链接，"
+        "没有可确认链接时写‘链接未提供’，不得编造；action_items 返回空数组。推荐清单允许 core_points 超过 5 条。"
+    )
+
     def __init__(self, settings: Settings, classifier_service: ClassifierService) -> None:
         self.settings = settings
         self.classifier_service = classifier_service
@@ -88,9 +98,13 @@ class AIService:
             "content_type 只能是 article、video、note、tutorial、paper、code_project、inspiration、tool、"
             "resource_collection。importance 只能是 low、medium、high、critical。"
             "original_language 使用语言代码（如 zh-CN、en），非中文内容的 is_translated 为 true。"
-            "core_points 为 1-5 条，action_items 为 0-5 条，keywords 为 1-5 个。"
+            "普通内容的 core_points 为 1-5 条，action_items 为 0-5 条，keywords 为 1-5 个。"
         )
-        user_message = f"已有标题：{title or '无'}\n原始链接：{source_url or '无'}\n正文：\n{text[:8000]}"
+        is_xiaohongshu = "xiaohongshu.com" in source_url.lower() or "xhslink.com" in source_url.lower()
+        if is_xiaohongshu:
+            prompt += self.XIAOHONGSHU_RULES
+        content_limit = 30000 if is_xiaohongshu else 8000
+        user_message = f"已有标题：{title or '无'}\n原始链接：{source_url or '无'}\n正文：\n{text[:content_limit]}"
 
         try:
             response = client.chat.completions.create(

@@ -163,9 +163,16 @@ class ContentPipelineService:
             existing = self.item_service.find_by_normalized_url(db, item.normalized_url)
         elif item.external_id:
             existing = db.scalar(select(ContentItem).where(ContentItem.external_id == item.external_id))
-        item = existing or item
+        incoming = item
+        item = existing or incoming
         if existing:
-            return existing
+            item.title = incoming.title or item.title
+            item.raw_text = incoming.raw_text
+            item.raw_excerpt = incoming.raw_excerpt
+            item.content_type = incoming.content_type
+            item.source_type = incoming.source_type
+            item.author = ""
+            item.notion_sync_status = NotionSyncStatus.PENDING
 
         item.translation_status = TranslationStatus.NOT_REQUIRED
         item.process_status = ProcessStatus.PROCESSING
@@ -174,6 +181,8 @@ class ContentPipelineService:
         try:
             analysis = self.ai_service.analyze(item.source_url or "", item.title, item.raw_text)
             self._apply_analysis(item, analysis)
+            if item.source_type.startswith("小红书视频"):
+                item.content_type = ContentType.VIDEO
             item.clean_content = item.raw_text
             item.ai_status = StageStatus.SUCCESS
             item.process_status = ProcessStatus.COMPLETED

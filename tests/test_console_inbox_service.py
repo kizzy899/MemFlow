@@ -8,6 +8,7 @@ def test_console_inbox_append_list_delete_and_conflict(tmp_path):
     service=ConsoleInboxService(tmp_path)
     snap=service.append("说明 https://example.com/a")
     assert snap["pending_url_count"]==1 and snap["items"][-1]["status"]=="pending"
+    assert snap["pending_item_count"] == 2
     with pytest.raises(ArchiveRunError): service.delete(snap["items"][-1]["item_id"],"stale")
     latest=service.snapshot(); result=service.delete(latest["items"][-1]["item_id"],latest["version"])
     assert result["pending_url_count"]==0

@@ -21,10 +21,8 @@ class Settings(BaseSettings):
     notion_api_key: str = Field(default="", alias="NOTION_API_KEY")
     notion_database_id: str = Field(default="", alias="NOTION_DATABASE_ID")
 
-    xhs_cookie: str = Field(default="", alias="XHS_COOKIE")
-    xhs_browser_profile_path: str = Field(default="", alias="XHS_BROWSER_PROFILE_PATH")
-    xhs_username: str = Field(default="", alias="XHS_USERNAME")
-    xhs_password: str = Field(default="", alias="XHS_PASSWORD")
+    memflow_auth_key: str = Field(default="", alias="MEMFLOW_AUTH_KEY")
+    chrome_cdp_url: str = Field(default="http://127.0.0.1:9223", alias="CHROME_CDP_URL")
 
     translation_output_dir: str = Field(default="files/translated", alias="TRANSLATION_OUTPUT_DIR")
     raw_output_dir: str = Field(default="files/raw", alias="RAW_OUTPUT_DIR")

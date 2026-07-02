@@ -2,6 +2,8 @@
 
 MemFlow 是基于 FastAPI、SQLite、OpenAI 兼容接口和 Notion API 的个人知识整理 Agent。它可以采集网页或粘贴文本，生成中文结构化笔记，本地持久化，并在 Notion 可用时同步。
 
+项目内置 `agent-search` Skill，可对视频抽帧执行本地 OCR，并从文章或 OCR 文字中提取项目、Agent Skill 与推荐网页地址。详见 `docs/22-agent-search-skill.md`。
+
 完整设计和实施记录见 [docs/README.md](docs/README.md)。仓库要求每个新功能或模块在同一次变更中更新模块文档和实施日志。
 
 ## 安装与启动
@@ -101,7 +103,13 @@ curl http://127.0.0.1:8000/api/items/<UUID>
 
 - `POST /api/web-links/submit`
 - `POST /api/translate`
-- `POST /api/xiaohongshu/sync`
+- `GET /api/xhs/login/qrcode`
+- `POST /api/xhs/login/chrome`
+- `GET /api/xhs/login/status`
+- `GET /api/xhs/session`
+- `POST /api/xhs/session/refresh`
+- `POST /api/xhs/logout`
+- `POST /api/xhs/sync`
 
 ## 测试
 
@@ -159,7 +167,7 @@ cd ..
 
 浏览器打开 `http://127.0.0.1:8000/console`。开发模式可在另一个终端运行 `cd frontend && npm run dev`，访问 `http://127.0.0.1:5173/console/`。
 
-控制台提供小红书与 Notion 配置、登录/连接检测、inbox 队列（含全选和勾选批量删除）、后台整理进度、最近 Notion 结果和 hot.md。敏感输入保存后立即清空，后端只返回脱敏状态；小红书检测会区分登录失败与已登录但收藏页不可读；配置和控制 API 仅允许本机访问。
+控制台提供连接现有 Chrome 的小红书授权、账号管理、Notion 配置、inbox 队列、后台整理进度、最近 Notion 结果和 hot.md。小红书浏览器状态使用 `MEMFLOW_AUTH_KEY` 加密保存在本机，前端不接触 Cookie；CDP 默认只连接 `127.0.0.1:9223`，配置和控制 API 仅允许本机访问。
 
 前端验证：
 

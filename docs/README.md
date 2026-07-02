@@ -5,6 +5,7 @@
 ## 文档
 
 - [实施日志](00-implementation-log.md)
+- [RawBlock 前端设计系统](../DESIGN.md)
 - [Notion 手动同步重试](05-notion-sync-retry.md)
 - [本地条目 API](06-local-items-api.md)
 - [SQLite 数据结构与迁移](07-sqlite-schema.md)
@@ -17,7 +18,7 @@
 - [Notion 页面正文排版](14-notion-page-layout.md)
 - [批量 Notion 同步](15-batch-sync.md)
 - [JSON 与 Markdown 导出备份](16-export-and-backup.md)
-- [自动链接阅读与知识库归档](17-link-inbox-archive.md)
+- [链接与纯文字 inbox 阅读归档](17-link-inbox-archive.md)
 - [Knowledge Console 可视化控制台与外部连接稳定性](18-knowledge-console.md)
 
 ## 维护规则
@@ -25,3 +26,7 @@
 功能代码、接口、数据结构或状态流转发生变化时，必须同步更新模块文档、本文索引以及 `00-implementation-log.md`。文档应包含用途、接口或调用方式、数据变化、错误处理和验证方法。
 
 - [小红书收藏同步与 Windows 登录稳定性](17-xiaohongshu-favorites.md)
+- [小红书扫码认证中心](19-xiaohongshu-qr-auth.md)
+- [连接现有 Chrome 读取小红书收藏](20-chrome-cdp-auth-flow.md)
+- [小红书收藏读取操作流程](21-xhs-favorites-operations-runbook.md)
+- [Agent Search 视频文字与资源链接提取](22-agent-search-skill.md)

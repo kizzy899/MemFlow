@@ -24,7 +24,7 @@ class ConsoleInboxService:
         for index, block in enumerate(blocks):
             failure = next((line[len(FAILURE_PREFIX):].strip() for line in block.text.splitlines() if line.strip().startswith(FAILURE_PREFIX)), "")
             items.append({"item_id": self._id(index, block), "content": block.source_text, "urls": block.urls, "status": "failed" if failure else "pending", "failure_reason": failure})
-        return {"version": hashlib.sha256(raw.encode()).hexdigest(), "raw_content": raw, "pending_url_count": sum(len(x["urls"]) for x in items), "items": items}
+        return {"version": hashlib.sha256(raw.encode()).hexdigest(), "raw_content": raw, "pending_item_count": len(items), "pending_url_count": sum(len(x["urls"]) for x in items), "items": items}
 
     def append(self, content: str) -> dict[str, Any]:
         value = self._prepare_content(content)

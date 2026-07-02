@@ -121,3 +121,28 @@ def test_repeated_url_blocks_reuse_result_and_both_are_removed(archive_root):
     assert data["processed"] == 1
     assert data["remaining"] == 0
     assert len(notion.created) == 1
+
+
+def test_plain_text_is_analyzed_archived_and_removed(archive_root):
+    prepare(archive_root, "这是一段没有链接但需要整理的项目想法。\n")
+    service, notion = make_service(archive_root)
+    engine=create_engine("sqlite:///:memory:"); Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        data=service.run(db)
+        item=db.query(ContentItem).one()
+        assert item.input_type.value == "text"
+        assert item.content_hash
+        assert item.raw_text.startswith("这是一段")
+    assert data["processed"] == 1 and data["remaining"] == 0
+    assert len(notion.created) == 1
+    assert (archive_root/"inbox"/"links.md").read_text(encoding="utf-8") == ""
+
+
+def test_plain_text_notion_failure_stays_in_inbox(archive_root):
+    text = "没有链接的失败重试内容"
+    prepare(archive_root, text + "\n")
+    service, _ = make_service(archive_root, notion=Notion(fail=True))
+    engine=create_engine("sqlite:///:memory:"); Base.metadata.create_all(engine)
+    with Session(engine) as db: data=service.run(db)
+    assert data["failed_notion"] == 1
+    assert text in (archive_root/"inbox"/"links.md").read_text(encoding="utf-8")

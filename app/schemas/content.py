@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
 class WebLinkSubmitRequest(BaseModel):
@@ -82,7 +82,7 @@ class TranslateResponse(BaseModel):
 
 
 class XiaohongshuSyncRequest(BaseModel):
-    limit: int = 20
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class XiaohongshuSyncResponse(BaseModel):

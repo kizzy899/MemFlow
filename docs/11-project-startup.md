@@ -2,6 +2,8 @@
 
 根目录的 `start.ps1` 为 Windows PowerShell 启动入口。脚本始终将工作目录切换到仓库根目录，使用 `.venv\Scripts\python.exe` 启动 FastAPI 应用，避免从其他目录调用时加载错误的相对路径。
 
+小红书扫码登录需要持久 Playwright 会话，因此 Windows 启动脚本不启用 Uvicorn auto-reload，确保使用可创建 Chromium 子进程的 Proactor 事件循环。代码变更后需手动重启服务。
+
 ## 公共调用方式
 
 ```powershell

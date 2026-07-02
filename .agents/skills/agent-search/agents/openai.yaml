@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Search"
+  short_description: "提取视频文字并发现文章中的项目、Skill 与推荐链接"
+  default_prompt: "Use $agent-search to extract text from this video and classify useful project, skill, and website links."

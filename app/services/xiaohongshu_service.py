@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from typing import Any
 
 from playwright.async_api import BrowserContext, Page, async_playwright
@@ -10,14 +11,17 @@ from playwright.async_api import BrowserContext, Page, async_playwright
 from app.config import Settings
 from app.models.content_item import ContentItem, ContentType, SourcePlatform
 from app.services.exceptions import XiaohongshuFavoritesError, XiaohongshuLoginError
+from app.services.xhs_login_service import XiaohongshuLoginService
 
 
 class XiaohongshuService:
     HOME_URL = "https://www.xiaohongshu.com/explore"
     BASE_URL = "https://www.xiaohongshu.com"
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, login_service: XiaohongshuLoginService | None = None, agent_search_service: Any | None = None) -> None:
         self.settings = settings
+        self.login_service = login_service
+        self.agent_search_service = agent_search_service
 
     async def fetch_favorites(self, limit: int = 20) -> list[ContentItem]:
         if os.name == "nt":
@@ -35,13 +39,21 @@ class XiaohongshuService:
             loop.close()
 
     async def _fetch_favorites(self, limit: int) -> list[ContentItem]:
-        if not self.settings.xhs_browser_profile_path and not self.settings.xhs_cookie:
+        if not self.login_service or not self.login_service.session.storage_state:
             raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
 
         async with async_playwright() as playwright:
-            context = await self._create_context(playwright)
-            try:
+            owned_page = None
+            if self.login_service.cdp_connected:
+                cdp_browser = await playwright.chromium.connect_over_cdp(self.login_service.cdp_url, timeout=5000)
+                if not cdp_browser.contexts:
+                    raise XiaohongshuLoginError("Chrome CDP 没有可用的浏览器上下文。")
+                context = cdp_browser.contexts[0]
+                page = owned_page = await context.new_page()
+            else:
+                context = await self._create_context(playwright)
                 page = await context.new_page() if not context.pages else context.pages[0]
+            try:
                 await page.goto(self.HOME_URL, wait_until="domcontentloaded", timeout=30000)
                 if "login" in page.url.lower():
                     raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
@@ -51,21 +63,14 @@ class XiaohongshuService:
                     raise XiaohongshuFavoritesError("已进入个人收藏页，但没有识别到收藏内容；可能收藏为空或页面结构已变化。")
                 return items
             finally:
-                await context.close()
+                if owned_page:
+                    await owned_page.close()
+                else:
+                    await context.close()
 
     async def _create_context(self, playwright: Any) -> BrowserContext:
-        if self.settings.xhs_browser_profile_path:
-            return await playwright.chromium.launch_persistent_context(
-                user_data_dir=self.settings.xhs_browser_profile_path,
-                headless=True,
-            )
-
         browser = await playwright.chromium.launch(headless=True)
-        context = await browser.new_context()
-        cookies = self._parse_cookie_header(self.settings.xhs_cookie)
-        if cookies:
-            await context.add_cookies(cookies)
-        return context
+        return await browser.new_context(storage_state=self.login_service.session.storage_state)
 
     async def _open_favorites(self, page: Page) -> None:
         me_link = page.locator("a[href^='/user/profile/']").filter(has_text="我").first
@@ -119,14 +124,24 @@ class XiaohongshuService:
             if not href:
                 href = await node.locator("a").first.get_attribute("href")
             note_url = self._normalize_note_url(href)
-            text = await self._safe_inner_text(node)
-            external_id = note_url.rsplit("/", 1)[-1] if note_url else f"xhs-{index}"
+            text = self._sanitize_content(await self._safe_inner_text(node))
+            content_type = ContentType.POST
+            source_type = "小红书图文"
+            if note_url:
+                detail_text, is_video, extraction_status = await self._read_note_detail(page, note_url)
+                if detail_text:
+                    text = self._sanitize_content("\n".join(value for value in (title, detail_text) if value))
+                if is_video:
+                    content_type = ContentType.VIDEO
+                    source_type = f"小红书视频（{extraction_status}）"
+            external_id = note_url.rsplit("/", 1)[-1].split("?", 1)[0] if note_url else f"xhs-{index}"
             results.append(
                 ContentItem(
                     title=title or f"小红书收藏 {index + 1}",
                     source_url=note_url,
                     source_platform=SourcePlatform.XIAOHONGSHU,
-                    content_type=ContentType.POST,
+                    content_type=content_type,
+                    source_type=source_type,
                     raw_text=text,
                     raw_excerpt=text[:200],
                     external_id=external_id,
@@ -134,6 +149,73 @@ class XiaohongshuService:
             )
         return results
 
+    async def _read_note_detail(self, page: Page, note_url: str) -> tuple[str, bool, str]:
+        detail = None
+        try:
+            detail = await page.context.new_page()
+            await detail.goto(note_url, wait_until="domcontentloaded", timeout=30000)
+            detail_text = ""
+            detail_selector = ""
+            for selector in ("#detail-desc", ".note-content", ".desc", "[class*='note-content']"):
+                detail_text = await self._safe_inner_text(detail.locator(selector).first)
+                if detail_text:
+                    detail_selector = selector
+                    break
+            if detail_selector:
+                links = await detail.locator(f"{detail_selector} a[href]").evaluate_all(
+                    "nodes => nodes.map(node => ({label: (node.innerText || '').trim(), url: node.href})).filter(item => /^https?:/.test(item.url))"
+                )
+                if links:
+                    detail_text += "\n[正文显式链接]\n" + "\n".join(
+                        f"{entry.get('label') or '名称待确认'}｜{entry['url']}" for entry in links
+                    )
+            video = detail.locator("video").first
+            if not await video.count():
+                return detail_text, False, "无需 OCR"
+            video_source = await video.evaluate("node => node.currentSrc || node.src || node.querySelector('source')?.src || ''")
+            marker, ocr_text, resources = await self._extract_video_text(str(video_source or ""))
+            parts = [detail_text, marker]
+            if ocr_text:
+                parts.extend(["[视频 OCR 全文]", ocr_text])
+            if resources:
+                parts.append("[视频中识别到的资源链接]")
+                parts.extend(f"{entry.get('label') or '名称待确认'}｜{entry['url']}" for entry in resources)
+            return "\n".join(part for part in parts if part), True, marker.strip("[]")
+        except Exception as exc:
+            message = " ".join(str(exc).split())[:200] or type(exc).__name__
+            return f"[详情内容提取失败：{message}]", False, "详情提取失败"
+        finally:
+            if detail is not None:
+                await detail.close()
+
+    async def _extract_video_text(self, video_source: str) -> tuple[str, str, list[dict[str, str]]]:
+        if not video_source.startswith(("http://", "https://")):
+            return "[视频文字提取失败：未取得可下载的视频地址]", "", []
+        if not self.agent_search_service:
+            return "[视频文字提取失败：OCR 服务不可用]", "", []
+        try:
+            result = await asyncio.to_thread(self.agent_search_service.extract, "video", video_source, 1.0, 1800)
+        except Exception as exc:
+            message = " ".join(str(exc).split())[:200] or type(exc).__name__
+            return f"[视频文字提取失败：{message}]", "", []
+        text = str(result.get("text", "")).strip()
+        resources = [entry for entry in result.get("resources", []) if isinstance(entry, dict) and entry.get("url")]
+        if not text:
+            return "[视频文字提取为空：画面中未识别到清晰文字]", "", resources
+        segments = len(result.get("segments", []))
+        return f"[视频文字提取成功：OCR 共 {segments} 个有效片段]", text, resources
+
+    @staticmethod
+    def _sanitize_content(text: str) -> str:
+        social_metric = re.compile(r"^(?:点赞|赞|收藏|评论|关注|粉丝|获赞)\s*[:：]?\s*[\d.]+(?:万|千|w|k)?$|^[\d.]+(?:万|千|w|k)?\s*(?:赞|点赞|收藏|评论|关注|粉丝|获赞)$", re.IGNORECASE)
+        lines = []
+        for line in text.splitlines():
+            clean = " ".join(line.split()).strip()
+            if not clean or social_metric.fullmatch(clean) or re.match(r"^(?:作者|博主|用户)\s*[:：]", clean):
+                continue
+            if clean not in lines:
+                lines.append(clean)
+        return "\n".join(lines)
     async def _safe_inner_text(self, locator: Any) -> str:
         try:
             return (await locator.inner_text(timeout=5000)).strip()

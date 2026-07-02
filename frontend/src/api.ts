@@ -7,5 +7,5 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   })
   const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }))
   if (!response.ok || body.success === false) throw new Error(body.message || body.detail || `HTTP ${response.status}`)
-  return (body as ApiResponse<T>).data
+  return (body && typeof body === 'object' && 'data' in body ? (body as ApiResponse<T>).data : body) as T
 }

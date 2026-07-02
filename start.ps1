@@ -40,9 +40,8 @@ try {
         "--host", $BindAddress,
         "--port", $Port.ToString()
     )
-    if (-not $NoReload) {
-        $uvicornArgs += "--reload"
-    }
+    # Auto-reload uses a Windows selector loop that cannot host the
+    # persistent Playwright process required by QR login.
 
     Write-Host "Starting MemFlow at http://${BindAddress}:$Port"
     Write-Host "Knowledge Console: http://${BindAddress}:$Port/console"

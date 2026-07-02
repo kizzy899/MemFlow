@@ -4,6 +4,12 @@
 
 Knowledge Console 是 MemFlow 的本机单用户操作界面，使用 React、Vite 和 TypeScript。开发模式运行 `cd frontend && npm run dev`，生产构建运行 `npm run build`，随后由 FastAPI 在 `http://127.0.0.1:8000/console` 托管。
 
+## 首页布局与独立页面
+
+首页左栏依次提供小红书授权、收藏读取参数、Notion 配置和项目记忆入口。收藏读取数量为 1–100，直接调用 `POST /api/xhs/sync` 并显示执行状态。账号页只负责 Chrome 连接和会话管理，不再重复展示收藏读取表单。
+
+`hot.md` 不在首页完整展开；首页“打开 hot.md”按钮进入 `/console/memory`。独立页面负责加载、刷新和安全渲染 Markdown，并提供返回 Dashboard 的按钮。
+
 Vite 将 `/api` 代理到后端；生产模式同源访问，不需要 CORS。控制接口验证客户端为 loopback，绑定到非本机地址时远程请求返回 403。
 
 ## 页面模块
@@ -81,3 +87,13 @@ normalized_url 增加 fbclid/gclid 过滤并去除非根路径末尾斜杠。启
 - 小红书测试在 Windows reload 服务中通过独立 Proactor 工作线程运行 Playwright，避免 `NotImplementedError`；公共 API 和四种检测状态不变。
 - Notion 测试对连接建立进行有限重试，环境代理出现 TLS/连接错误时只读探测直连并复用成功通道；权限和字段错误不降级。
 - 两类错误均保留明确的前端消息；小红书未知异常另写本机 traceback，响应和日志不包含 Cookie、Token 或原始用户内容。
+## 纯文字任务启用条件（2026-07-02）
+
+控制台使用 `GET /api/inbox` 的 `pending_item_count` 判断“开始整理”是否可用，不再用 `pending_url_count`。因此只含纯文字的 inbox 可以启动任务；任务进行中仍禁用按钮。响应同时保留 `pending_url_count` 供界面展示链接数量，未新增前端持久化状态。API 失败仍显示通知，后台 AI/Notion 失败由任务状态与 inbox 失败说明共同呈现。前端测试覆盖 `pending_item_count=1`、`pending_url_count=0` 时按钮可用。
+## RawBlock 视觉与布局（2026-07-02）
+
+控制台采用根目录 `DESIGN.md` 定义的 RawBlock 设计系统：黑白基础色、链接专用纯蓝色、成功/警告/错误原色、Archivo Black/Work Sans/Space Mono 字体层级、零圆角、无阴影，以及 3px/5px 边框层级。字体通过 Google Fonts 加载，无法联网时回退到 Impact、中文系统字体和 monospace，不影响功能。
+
+首页保持配置与工作区的语义分组，但改为非对称双栏：较窄配置栏从页面顶部开始，较宽工作栏下移形成张力，收件箱使用 5px 边框作为主视觉，最近归档横跨全宽。900px 以下恢复单栏，560px 以下压缩边距并将任务统计改为 2×2。所有按钮、输入框、状态标签、列表、通知、授权页与 hot.md 页统一遵循反相交互和方角规则；蓝色仅用于真实链接。
+
+本次只修改展示结构和样式，不改变 API、持久化字段或任务状态机。收件箱状态标签同时显示 `pending_item_count` 与 `pending_url_count`，使纯文字项和链接数均可辨认。前端测试继续覆盖既有操作与可访问名称，生产构建用于验证 TypeScript 和 CSS 打包。
