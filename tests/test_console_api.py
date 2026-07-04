@@ -54,3 +54,16 @@ def test_xhs_sync_limit_is_bounded():
     with TestClient(app) as client:
         assert client.post("/api/xhs/sync",json={"limit":0}).status_code==422
         assert client.post("/api/xhs/sync",json={"limit":101}).status_code==422
+
+
+def test_xhs_sync_starts_background_task_and_reports_status(monkeypatch):
+    with TestClient(app) as client:
+        manager = app.state.container.xhs_sync_manager
+        state = {"task_id": "xhs-1", "status": "fetching", "requested": 12}
+        monkeypatch.setattr(manager, "start", lambda limit: state | {"requested": limit})
+        monkeypatch.setattr(manager, "status", lambda: state)
+
+        response = client.post("/api/xhs/sync", json={"limit": 12})
+        assert response.status_code == 202
+        assert response.json()["requested"] == 12
+        assert client.get("/api/xhs/sync/status").json() == state

@@ -22,6 +22,7 @@ from app.services.translation_service import TranslationService
 from app.services.web_parser_service import WebParserService
 from app.services.xiaohongshu_service import XiaohongshuService
 from app.services.xhs_login_service import XiaohongshuLoginService
+from app.services.xhs_sync_manager import XiaohongshuSyncManager
 
 
 class ServiceContainer:
@@ -31,14 +32,22 @@ class ServiceContainer:
         self.agent_search_service = AgentSearchService(self.root)
         self.console_inbox_service = ConsoleInboxService(self.root)
         self.processor_manager: ProcessorManager | None = None
+        self.xhs_sync_manager: XiaohongshuSyncManager | None = None
         self._build(settings)
         self.processor_manager = ProcessorManager(self.link_archive_service)
+        self.xhs_sync_manager = XiaohongshuSyncManager(self.xiaohongshu_service, self.content_pipeline_service)
 
     def reload_settings(self, settings: Settings) -> None:
+        self.notion_service.close()
         self.config_service.set_settings(settings)
         self._build(settings)
         if self.processor_manager:
             self.processor_manager.set_archive_service(self.link_archive_service)
+        if self.xhs_sync_manager:
+            self.xhs_sync_manager.set_services(self.xiaohongshu_service, self.content_pipeline_service)
+
+    def close(self) -> None:
+        self.notion_service.close()
 
     def _build(self, settings: Settings) -> None:
         self.settings = settings

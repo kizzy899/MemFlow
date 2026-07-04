@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-
-from app.db import get_db
-from app.schemas.content import XiaohongshuSyncRequest, XiaohongshuSyncResponse
+from app.schemas.content import XiaohongshuSyncRequest
 from app.services.container import ServiceContainer
-from app.services.exceptions import XiaohongshuFavoritesError, XiaohongshuLoginError
 from app.services.xhs_login_service import LoginServiceError
 
 
@@ -59,21 +55,16 @@ async def logout(request: Request):
     return {"status": "idle", "loggedIn": False}
 
 
-@router.post("/sync", response_model=XiaohongshuSyncResponse)
-async def sync_xiaohongshu(
-    payload: XiaohongshuSyncRequest, request: Request, db: Session = Depends(get_db)
-) -> XiaohongshuSyncResponse:
+@router.post("/sync", status_code=202)
+def sync_xiaohongshu(payload: XiaohongshuSyncRequest, request: Request):
     container: ServiceContainer = request.app.state.container
     try:
-        items = await container.xiaohongshu_service.fetch_favorites(limit=payload.limit)
-    except (XiaohongshuLoginError, XiaohongshuFavoritesError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return container.xhs_sync_manager.start(payload.limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    synced_count = 0
-    for item in items:
-        processed = container.content_pipeline_service.process_xiaohongshu_item(db, item)
-        if processed.process_status.value == "completed":
-            synced_count += 1
 
-    return XiaohongshuSyncResponse(status="success", synced_count=synced_count)
+@router.get("/sync/status")
+def sync_status(request: Request):
+    return request.app.state.container.xhs_sync_manager.status()
 

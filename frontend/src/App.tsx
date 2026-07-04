@@ -10,6 +10,7 @@ type XhsSession = { status: string; loggedIn: boolean; cookieValid: boolean; acc
 type InboxItem = { item_id: string; content: string; urls: string[]; status: 'pending' | 'failed'; failure_reason: string }
 type Inbox = { version: string; raw_content: string; pending_item_count: number; pending_url_count: number; items: InboxItem[] }
 type Task = { task_id: string | null; status: 'idle' | 'processing' | 'success' | 'failed'; current_url: string; processed: number; success: number; skipped_duplicate: number; failed: number; last_error: string }
+type XhsTask = { task_id: string | null; status: 'idle' | 'fetching' | 'processing' | 'success' | 'failed'; phase: string; message: string; requested: number; fetched: number; processed: number; success: number; failed: number; current_index: number; current_title: string; last_error: string; started_at: string | null; updated_at: string | null; finished_at: string | null }
 type RecentItem = { item_id: string; title: string; original_url: string; normalized_url: string; notion_url: string; created_at: string; status: string }
 
 const emptyConfig: Config = {
@@ -32,15 +33,47 @@ function FavoriteSyncPanel({ enabled }: { enabled: boolean }) {
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [task, setTask] = useState<XhsTask | null>(null)
+  const active = task?.status === 'fetching' || task?.status === 'processing'
+  const progress = task?.status === 'processing' && task.fetched ? Math.round(task.processed / task.fetched * 100) : 0
+  const elapsed = task?.started_at ? Math.max(0, Math.floor((Date.now() - new Date(task.started_at).getTime()) / 1000)) : 0
+  const updateTask = useCallback((value: XhsTask) => {
+    setTask(value)
+    if (value.status === 'success') { setResult(`已完成：成功整理 ${value.success} 条收藏`); setError('') }
+    if (value.status === 'failed') setError(value.last_error || `任务结束，其中 ${value.failed} 条处理失败`)
+  }, [])
+  useEffect(() => { void api<XhsTask>('/api/xhs/sync/status').then(updateTask).catch(() => undefined) }, [updateTask])
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => {
+      void api<XhsTask>('/api/xhs/sync/status').then(updateTask).catch(value => setError(`状态刷新失败：${value.message}`))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [active, updateTask])
   const run = () => {
     const limit = Math.max(1, Math.min(100, Number(limitText) || 1))
     setLimitText(String(limit)); setSyncing(true); setResult(null); setError('')
-    api<{ status: string; synced_count: number }>('/api/xhs/sync', { method: 'POST', body: JSON.stringify({ limit }) })
-      .then(value => setResult(`已完成：成功整理 ${value.synced_count} 条收藏`))
+    api<XhsTask>('/api/xhs/sync', { method: 'POST', body: JSON.stringify({ limit }) })
+      .then(updateTask)
       .catch(value => setError(value.message))
       .finally(() => setSyncing(false))
   }
-  return <Card title="读取收藏" action={<Badge status={enabled ? 'configured' : 'unknown'}>{enabled ? '可读取' : '请先登录'}</Badge>}><div className="sync-panel home-sync"><label>本次读取数量（1–100）<input type="number" min={1} max={100} value={limitText} onChange={event => setLimitText(event.target.value)} /></label><button className="button large" disabled={!enabled || syncing} onClick={() => void run()}>{syncing ? '正在读取并整理…' : '开始读取收藏'}</button>{result && <p className="success-text" role="status">{result}</p>}{error && <p className="error-text" role="alert">{error}</p>}</div></Card>
+  const statusLabel = task?.status === 'fetching' ? '读取收藏列表' : task?.status === 'processing' ? '分析并同步' : task?.status === 'success' ? '任务完成' : task?.status === 'failed' ? '任务失败' : '等待开始'
+  return <Card title="读取收藏" action={<Badge status={active ? 'processing' : enabled ? 'configured' : 'unknown'}>{active ? statusLabel : enabled ? '可读取' : '未连接 Chrome'}</Badge>}>
+    <div className="sync-panel home-sync">
+      <label>本次读取数量（1–100）<input type="number" min={1} max={100} value={limitText} disabled={active} onChange={event => setLimitText(event.target.value)} /></label>
+      {task?.task_id && <section className="xhs-progress" aria-live="polite">
+        <div className="xhs-steps"><span className={task.status !== 'idle' ? 'active' : ''}>1 读取</span><span className={task.status === 'processing' || task.status === 'success' || task.status === 'failed' ? 'active' : ''}>2 分析与同步</span><span className={task.status === 'success' || task.status === 'failed' ? 'active' : ''}>3 完成</span></div>
+        <div className={`progress-track ${task.status === 'fetching' ? 'indeterminate' : ''}`} role="progressbar" aria-label="收藏任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.status === 'fetching' ? undefined : progress}><span style={{ width: task.status === 'fetching' ? '35%' : `${progress}%` }} /></div>
+        <div className="xhs-progress-head"><strong>{statusLabel}</strong><span>{task.status === 'fetching' ? `目标 ${task.requested} 条` : `${task.processed}/${task.fetched} 条 · ${progress}%`}</span></div>
+        <p>{task.message}</p>
+        {task.current_title && <p className="current-url">第 {task.current_index}/{task.fetched} 条：{task.current_title}</p>}
+        <div className="xhs-stats"><span>成功 <b>{task.success}</b></span><span>失败 <b>{task.failed}</b></span><span>耗时 <b>{elapsed}s</b></span><span>任务 <b>{task.task_id.slice(0, 8)}</b></span></div>
+      </section>}
+      {enabled ? <button className="button large" disabled={syncing || active} onClick={() => void run()}>{active ? statusLabel : '开始读取收藏'}</button> : <a className="button large" href="/console/login/xiaohongshu">先连接已登录的 Chrome</a>}
+      {result && <p className="success-text" role="status">{result}</p>}{error && <p className="error-text" role="alert">{error}</p>}
+    </div>
+  </Card>
 }
 
 function HotMemory() {

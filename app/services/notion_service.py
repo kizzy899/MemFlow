@@ -26,13 +26,15 @@ class NotionService:
         "关键词": "multi_select",
         "核心观点": "rich_text",
         "行动建议": "rich_text",
-        "原文语言": "select",
-        "是否翻译": "checkbox",
         "阅读状态": "select",
         "重要程度": "select",
         "AI处理状态": "select",
         "创建时间": "date",
         "更新时间": "date",
+    }
+    OPTIONAL_PROPERTIES = {
+        "原文语言": "select",
+        "是否翻译": "checkbox",
     }
     PLATFORM_NAMES = {
         "web": "Web", "manual": "手动输入", "wechat": "微信公众号", "bilibili": "B站",
@@ -55,6 +57,8 @@ class NotionService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._connection_mode: str | None = None
+        self._database_properties: dict[str, Any] | None = None
+        self._clients: dict[str, Client] = {}
 
     def is_configured(self) -> bool:
         return bool(self.settings.notion_api_key and self.settings.notion_database_id)
@@ -79,13 +83,18 @@ class NotionService:
             return {"success": False, "message": "Notion 未配置", "data": base}
 
         try:
-            database = self._retrieve_database_with_fallback()
+            database = (
+                {"properties": self._database_properties}
+                if self._database_properties is not None
+                else self._retrieve_database_with_fallback()
+            )
         except Exception as exc:
             base["error"] = self.humanize_error(exc)
             return {"success": False, "message": base["error"], "data": base}
 
         base["database_accessible"] = True
         properties = database.get("properties", {})
+        self._database_properties = properties
         for name, expected_type in self.REQUIRED_PROPERTIES.items():
             property_data = properties.get(name)
             actual_type = property_data.get("type") if property_data else None
@@ -103,6 +112,25 @@ class NotionService:
             if not exists:
                 base["missing_fields"].append(name)
             elif not valid:
+                base["type_mismatches"].append(
+                    {"name": name, "expected_type": expected_type, "actual_type": actual_type}
+                )
+
+        for name, expected_type in self.OPTIONAL_PROPERTIES.items():
+            property_data = properties.get(name)
+            actual_type = property_data.get("type") if property_data else None
+            exists = property_data is not None
+            valid = True if not exists else actual_type == expected_type
+            base["fields"].append(
+                {
+                    "name": name,
+                    "expected_type": expected_type,
+                    "actual_type": actual_type,
+                    "exists": exists,
+                    "valid": valid,
+                }
+            )
+            if exists and not valid:
                 base["type_mismatches"].append(
                     {"name": name, "expected_type": expected_type, "actual_type": actual_type}
                 )
@@ -191,7 +219,10 @@ class NotionService:
     def _client(self) -> Client:
         if not self.is_configured():
             raise ConfigError("Notion 未配置：缺少 NOTION_API_KEY 或 NOTION_DATABASE_ID")
-        return self._build_client(self._connection_mode or "configured")
+        mode = self._connection_mode or "configured"
+        if mode not in self._clients:
+            self._clients[mode] = self._build_client(mode)
+        return self._clients[mode]
 
     def _build_client(self, mode: str) -> Client:
         proxy = self.settings.proxy_url or None
@@ -220,22 +251,37 @@ class NotionService:
             try:
                 database = direct.databases.retrieve(database_id=self.settings.notion_database_id)
                 self._connection_mode = "direct"
+                self._clients["direct"] = direct
                 return database
             except httpx.TransportError:
-                raise primary_error
-            finally:
                 direct.close()
-        finally:
-            close = getattr(primary, "close", None)
+                raise primary_error
+
+    def close(self) -> None:
+        seen: set[int] = set()
+        for client in self._clients.values():
+            if id(client) in seen:
+                continue
+            seen.add(id(client))
+            close = getattr(client, "close", None)
             if close:
                 close()
+        self._clients.clear()
+
+    def _ensure_database_properties(self) -> None:
+        if self._database_properties is None:
+            database = self._retrieve_database_with_fallback()
+            self._database_properties = database.get("properties", {})
+
     def _build_properties(self, item: ContentItem) -> dict[str, Any]:
+        self._ensure_database_properties()
+        existing_properties = set(self._database_properties or {})
         platform_value = getattr(item.source_platform, "value", "") if item.source_platform else ""
         content_type_value = getattr(item.content_type, "value", "") if item.content_type else ""
         importance_value = getattr(item.importance, "value", "medium") if item.importance else "medium"
         read_status_value = getattr(item.read_status, "value", "unread") if item.read_status else "unread"
         process_value = getattr(item.process_status, "value", "completed") if item.process_status else "completed"
-        return {
+        properties = {
             "标题": {"title": self._rich_text(item.title or "未命名")},
             "原始链接": {"url": item.source_url or None},
             "来源平台": {"select": {"name": self.PLATFORM_NAMES.get(platform_value, "其他")}},
@@ -246,14 +292,17 @@ class NotionService:
             "关键词": {"multi_select": [{"name": tag[:100]} for tag in item.tags_list()]},
             "核心观点": {"rich_text": self._rich_text(self._numbered(item.core_points_list()))},
             "行动建议": {"rich_text": self._rich_text(self._numbered(item.action_items_list()))},
-            "原文语言": {"select": {"name": item.original_language or "未知"}},
-            "是否翻译": {"checkbox": bool(item.is_translated)},
             "阅读状态": {"select": {"name": self.READ_STATUS_NAMES.get(read_status_value, "未读")}},
             "重要程度": {"select": {"name": self.IMPORTANCE_NAMES.get(importance_value, "中")}},
             "AI处理状态": {"select": {"name": self.PROCESS_STATUS_NAMES.get(process_value, "已完成")}},
             "创建时间": {"date": {"start": self._to_date(item.created_at)}},
             "更新时间": {"date": {"start": self._to_date(item.updated_at)}},
         }
+        if "原文语言" in existing_properties:
+            properties["原文语言"] = {"select": {"name": item.original_language or "未知"}}
+        if "是否翻译" in existing_properties:
+            properties["是否翻译"] = {"checkbox": bool(item.is_translated)}
+        return properties
 
     @staticmethod
     def _rich_text(value: str) -> list[dict[str, Any]]:

@@ -120,6 +120,19 @@ footer { padding: 24px; border-top: 3px solid var(--black); text-align: left; fo
 .account-panel .button-row { justify-content: flex-start; }
 .sync-panel { margin-top: 24px; padding-top: 24px; border-top: 3px solid var(--black); display: grid; gap: 16px; }
 .sync-panel.home-sync { margin-top: 0; padding-top: 0; border-top: 0; }
+.xhs-progress { display: grid; gap: 12px; padding: 16px; border: 3px solid var(--black); background: var(--white); }
+.xhs-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font: 700 11px/1.4 "Space Mono", monospace; text-transform: uppercase; }
+.xhs-steps span { padding: 6px 8px; border: 2px solid var(--disabled); color: #777; text-align: center; }
+.xhs-steps span.active { border-color: var(--black); background: var(--black); color: var(--white); }
+.progress-track { height: 18px; overflow: hidden; border: 3px solid var(--black); background: var(--sunken); }
+.progress-track span { display: block; height: 100%; background: var(--success); transition: width .25s ease; }
+.progress-track.indeterminate span { background: var(--warning); animation: xhs-progress-slide 1.2s linear infinite; }
+.xhs-progress-head, .xhs-stats { display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 12px/1.4 "Space Mono", monospace; }
+.xhs-progress-head strong { font-size: 15px; }
+.xhs-progress p { margin: 0; }
+.xhs-stats { display: grid; grid-template-columns: repeat(2, 1fr); padding-top: 12px; border-top: 2px solid var(--black); }
+.xhs-stats b { float: right; }
+@keyframes xhs-progress-slide { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
 .success-text { color: var(--success); font-weight: 700; }
 .memory-page { width: min(1200px, calc(100% - 48px)); margin: 48px auto; }
 a.button { text-decoration: none; }
@@ -144,4 +157,6 @@ a.button { text-decoration: none; }
   .task-grid div:nth-child(2) { border-right: 0; }
   .task-grid div:nth-child(-n+2) { border-bottom: 3px solid var(--black); }
   .button-row .button { flex: 1 1 auto; }
+  .xhs-steps { grid-template-columns: 1fr; }
+  .xhs-progress-head { align-items: flex-start; flex-direction: column; }
 }

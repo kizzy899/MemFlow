@@ -30,3 +30,4 @@
 - [连接现有 Chrome 读取小红书收藏](20-chrome-cdp-auth-flow.md)
 - [小红书收藏读取操作流程](21-xhs-favorites-operations-runbook.md)
 - [Agent Search 视频文字与资源链接提取](22-agent-search-skill.md)
+- [小红书后台同步与 Notion 连接稳定性](23-xhs-sync-jobs-notion-stability.md)

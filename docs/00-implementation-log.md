@@ -394,3 +394,23 @@
 公共 API 与数据库 schema 不变。复用 `raw_text`、`source_type`、`content_type`、`author`、AI/处理/Notion 状态字段；视频文件和帧不持久化。失败行为包括详情读取失败、视频源不可下载、OCR 空结果、OCR 异常、AI 失败及 Notion 失败，均有明确标记或既有状态。
 
 验证结果：专项测试 27 项、完整后端回归 101 项与 Python compileall 均通过；`git diff --check` 通过。
+
+## 收藏读取反馈与 Notion 连接稳定性（2026-07-04）
+
+实施顺序：复查 Console 收藏面板和 `/api/xhs/sync`，确认未认证按钮静默禁用且已认证请求会阻塞到抓取、AI、Notion 全部结束；增加进程内收藏任务管理器和状态接口；前端改为启动后轮询；随后复查 Notion 调用链，复用客户端与数据库 schema；最后补充接口、连接缓存测试和模块文档。
+
+关键决策：收藏任务使用独立数据库 Session，不跨请求持有 Session；单实例只运行一个任务；状态不落盘；未连接 Chrome 时提供明确授权入口。Notion properties 只在服务生命周期首次请求，配置重载会建立全新服务；页面创建不因不确定传输错误自动重放，避免重复页面。
+
+变更文件：`app/services/xhs_sync_manager.py`、`app/routers/xiaohongshu.py`、`app/services/container.py`、`app/services/notion_service.py`、`app/main.py`、`frontend/src/App.tsx`、相关测试，以及 `docs/23-xhs-sync-jobs-notion-stability.md`、文档索引和本日志。未新增数据库或持久化字段。公共 API 新增 `GET /api/xhs/sync/status`，`POST /api/xhs/sync` 改为 202 后台任务语义；状态为 idle、fetching、processing、success、failed。
+
+失败行为：并发启动返回 409；抓取/认证异常写入 `last_error`；单项整理失败累计并使批次为 failed；Notion 客户端在配置重载和应用退出时关闭。验证结果：后端定向测试 17 passed；前端 Vitest 8 passed；Vite production build 通过。完整回归与静态检查结果见本次最终交付记录。
+
+## 收藏任务可观测性增强（2026-07-04）
+
+实施顺序：区分浏览器扩展 `message port closed` 与 MemFlow 请求错误；扩展后台任务快照；在处理每条收藏前写入当前序号和标题；重构 Console 收藏卡片为阶段、进度、计数和错误面板；补充恢复轮询、响应式样式、前端测试及文档。
+
+关键决策：读取收藏列表阶段没有可靠的服务端逐条总量回调，因此使用不确定进度动画；获得列表后才显示基于 `processed/fetched` 的真实百分比。页面初始化主动读取 `/api/xhs/sync/status`，刷新页面不再丢失当前进程内任务视图。扩展控制台异常不通过应用代码屏蔽，避免吞掉真实错误；应用轮询错误在卡片中明确呈现。
+
+变更文件：`app/services/xhs_sync_manager.py`、`frontend/src/App.tsx`、`frontend/src/styles.css`、`frontend/src/App.test.tsx`、`docs/23-xhs-sync-jobs-notion-stability.md` 和本日志。未新增持久化字段；公共状态响应新增 `phase`、`message`、`current_index`、`updated_at`，状态枚举不变。失败仍进入 `failed` 并保留 `last_error`。
+
+验证结果：完整后端 103 passed；前端 Vitest 9 passed；Vite production build、Python compileall 与 `git diff --check` 通过。pytest 仅提示受控环境无权创建 `.pytest_cache`，不影响测试执行。

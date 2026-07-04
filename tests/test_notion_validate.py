@@ -124,4 +124,25 @@ def test_validate_falls_back_to_direct_after_transport_error(monkeypatch) -> Non
 
     assert result["success"] is True
     assert service._connection_mode == "direct"
+    assert direct.closed is False
+    service.close()
     assert direct.closed is True
+
+
+def test_validate_reuses_database_schema_without_another_request(monkeypatch) -> None:
+    service = NotionService(settings(NOTION_API_KEY="secret", NOTION_DATABASE_ID="database"))
+    calls = 0
+
+    class CountingDatabases(FakeDatabases):
+        def retrieve(self, database_id: str):
+            nonlocal calls
+            calls += 1
+            return super().retrieve(database_id)
+
+    client = FakeClient(valid_properties())
+    client.databases = CountingDatabases(valid_properties())
+    monkeypatch.setattr(service, "_client", lambda: client)
+
+    assert service.validate_database_details()["success"] is True
+    assert service.validate_database_details()["success"] is True
+    assert calls == 1

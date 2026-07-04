@@ -14,6 +14,10 @@ from app.services.notion_service import NotionService
 
 def test_build_properties_matches_mvp_schema() -> None:
     service = NotionService(Settings())
+    service._database_properties = {
+        "原文语言": {"type": "select"},
+        "是否翻译": {"type": "checkbox"},
+    }
     item = ContentItem(
         title="测试文章",
         source_url="https://example.com",
@@ -36,7 +40,8 @@ def test_build_properties_matches_mvp_schema() -> None:
 
     properties = service._build_properties(item)
 
-    assert set(properties) == set(service.REQUIRED_PROPERTIES)
+    assert set(service.REQUIRED_PROPERTIES).issubset(set(properties))
+    assert properties["原文语言"]["select"]["name"] == "en"
     assert properties["是否翻译"]["checkbox"] is True
     assert properties["关键词"]["multi_select"] == [{"name": "AI"}, {"name": "Agent"}]
 

@@ -33,7 +33,10 @@ async def lifespan(app: FastAPI):
             logger.warning("Notion validation failed during startup: %s", exc)
     app.state.container = container
     await container.xhs_login_service.restore()
-    yield
+    try:
+        yield
+    finally:
+        container.close()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
