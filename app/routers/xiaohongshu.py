@@ -68,3 +68,8 @@ def sync_xiaohongshu(payload: XiaohongshuSyncRequest, request: Request):
 def sync_status(request: Request):
     return request.app.state.container.xhs_sync_manager.status()
 
+
+@router.post("/sync/cancel")
+def cancel_sync(request: Request):
+    return request.app.state.container.xhs_sync_manager.cancel()
+

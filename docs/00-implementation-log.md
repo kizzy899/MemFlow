@@ -414,3 +414,13 @@
 变更文件：`app/services/xhs_sync_manager.py`、`frontend/src/App.tsx`、`frontend/src/styles.css`、`frontend/src/App.test.tsx`、`docs/23-xhs-sync-jobs-notion-stability.md` 和本日志。未新增持久化字段；公共状态响应新增 `phase`、`message`、`current_index`、`updated_at`，状态枚举不变。失败仍进入 `failed` 并保留 `last_error`。
 
 验证结果：完整后端 103 passed；前端 Vitest 9 passed；Vite production build、Python compileall 与 `git diff --check` 通过。pytest 仅提示受控环境无权创建 `.pytest_cache`，不影响测试执行。
+
+## 收藏抓取超时、心跳与取消（2026-07-04）
+
+实施顺序：现场读取 `/api/xhs/sync/status`、端口与进程 CPU，确认任务停在 fetching 且无进度更新；为小红书浏览器抓取增加步骤回调和独立超时；任务管理器增加心跳、最后进度、页面信息和取消信号；新增取消 API；前端增加后台健康、停滞提示、当前页面和取消按钮；最后补充专项测试与文档。
+
+关键决策：不以心跳冒充业务进度，同时保留 `heartbeat_at` 和 `last_progress_at`；详情读取和 OCR 有独立上限；取消采用协作式信号并等待当前有界操作退出，不强杀线程、不关闭用户 Chrome。读取阶段仍使用不确定进度条，发现卡片后显示当前序号。
+
+变更文件：`app/services/xiaohongshu_service.py`、`app/services/xhs_sync_manager.py`、`app/routers/xiaohongshu.py`、`frontend/src/App.tsx`、`frontend/src/styles.css`、前后端测试及 `docs/23-xhs-sync-jobs-notion-stability.md`。新增公共 API `POST /api/xhs/sync/cancel`；任务状态新增 cancelling、cancelled，响应新增 step、discovered、page_url、last_progress_at、heartbeat_at；无持久化字段变化。
+
+失败行为：连接、新页面、导航、详情、OCR 和清理均有上限；顶层页面超时进入 failed 并返回可读错误，单条详情失败保留明确标记；取消最终进入 cancelled。验证结果：专项后端 18 passed；完整后端 105 passed；前端 Vitest 9 passed；Vite production build、Python compileall 与 `git diff --check` 通过。pytest 仅提示受控环境无权创建 `.pytest_cache`。

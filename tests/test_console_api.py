@@ -67,3 +67,13 @@ def test_xhs_sync_starts_background_task_and_reports_status(monkeypatch):
         assert response.status_code == 202
         assert response.json()["requested"] == 12
         assert client.get("/api/xhs/sync/status").json() == state
+
+
+def test_xhs_sync_cancel_endpoint(monkeypatch):
+    with TestClient(app) as client:
+        manager = app.state.container.xhs_sync_manager
+        state = {"task_id": "xhs-1", "status": "cancelling"}
+        monkeypatch.setattr(manager, "cancel", lambda: state)
+        response = client.post("/api/xhs/sync/cancel")
+        assert response.status_code == 200
+        assert response.json() == state

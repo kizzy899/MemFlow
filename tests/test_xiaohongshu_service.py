@@ -46,7 +46,7 @@ def test_windows_fetch_runs_browser_on_worker_thread(monkeypatch):
     s = XiaohongshuService(Settings(_env_file=None, XHS_COOKIE="a=b"))
     expected = [object()]
     monkeypatch.setattr("app.services.xiaohongshu_service.os.name", "nt")
-    monkeypatch.setattr(s, "_fetch_favorites_in_proactor_thread", lambda limit: expected)
+    monkeypatch.setattr(s, "_fetch_favorites_in_proactor_thread", lambda limit, progress, cancel_event: expected)
 
     assert asyncio.run(s.fetch_favorites(limit=1)) is expected
 class FakeAgentSearch:

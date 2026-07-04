@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import re
+import threading
 from typing import Any
 
 from playwright.async_api import BrowserContext, Page, async_playwright
@@ -23,56 +24,81 @@ class XiaohongshuService:
         self.login_service = login_service
         self.agent_search_service = agent_search_service
 
-    async def fetch_favorites(self, limit: int = 20) -> list[ContentItem]:
+    async def fetch_favorites(self, limit: int = 20, progress=None, cancel_event: threading.Event | None = None) -> list[ContentItem]:
         if os.name == "nt":
-            return await asyncio.to_thread(self._fetch_favorites_in_proactor_thread, limit)
-        return await self._fetch_favorites(limit)
+            return await asyncio.to_thread(self._fetch_favorites_in_proactor_thread, limit, progress, cancel_event)
+        return await self._fetch_favorites(limit, progress, cancel_event)
 
-    def _fetch_favorites_in_proactor_thread(self, limit: int) -> list[ContentItem]:
+    def _fetch_favorites_in_proactor_thread(self, limit: int, progress=None, cancel_event: threading.Event | None = None) -> list[ContentItem]:
         loop = asyncio.ProactorEventLoop()
         try:
             asyncio.set_event_loop(loop)
-            return loop.run_until_complete(self._fetch_favorites(limit))
+            return loop.run_until_complete(self._fetch_favorites(limit, progress, cancel_event))
         finally:
             loop.run_until_complete(loop.shutdown_asyncgens())
             asyncio.set_event_loop(None)
             loop.close()
 
-    async def _fetch_favorites(self, limit: int) -> list[ContentItem]:
+    async def _fetch_favorites(self, limit: int, progress=None, cancel_event: threading.Event | None = None) -> list[ContentItem]:
         if not self.login_service or not self.login_service.session.storage_state:
             raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
+
+        def report(step: str, message: str, **values: Any) -> None:
+            if progress:
+                progress({"step": step, "message": message, **values})
+
+        def check_cancelled() -> None:
+            if cancel_event and cancel_event.is_set():
+                raise asyncio.CancelledError("收藏读取已由用户取消")
 
         async with async_playwright() as playwright:
             owned_page = None
             if self.login_service.cdp_connected:
-                cdp_browser = await playwright.chromium.connect_over_cdp(self.login_service.cdp_url, timeout=5000)
+                check_cancelled(); report("connecting", "正在连接 Chrome 远程调试端口")
+                cdp_browser = await asyncio.wait_for(
+                    playwright.chromium.connect_over_cdp(self.login_service.cdp_url, timeout=8000), timeout=10
+                )
                 if not cdp_browser.contexts:
                     raise XiaohongshuLoginError("Chrome CDP 没有可用的浏览器上下文。")
                 context = cdp_browser.contexts[0]
-                page = owned_page = await context.new_page()
+                check_cancelled(); report("opening_page", "正在创建小红书读取标签页")
+                page = owned_page = await asyncio.wait_for(context.new_page(), timeout=10)
             else:
+                check_cancelled(); report("opening_browser", "正在启动本地浏览器会话")
                 context = await self._create_context(playwright)
                 page = await context.new_page() if not context.pages else context.pages[0]
             try:
-                await page.goto(self.HOME_URL, wait_until="domcontentloaded", timeout=30000)
+                check_cancelled(); report("opening_home", "正在打开小红书首页", page_url=self.HOME_URL)
+                await asyncio.wait_for(page.goto(self.HOME_URL, wait_until="domcontentloaded", timeout=30000), timeout=35)
                 if "login" in page.url.lower():
                     raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
-                await self._open_favorites(page)
-                items = await self._extract_items(page, limit)
+                await self._open_favorites(page, report, check_cancelled)
+                items = await self._extract_items(page, limit, report, check_cancelled)
                 if not items:
                     raise XiaohongshuFavoritesError("已进入个人收藏页，但没有识别到收藏内容；可能收藏为空或页面结构已变化。")
                 return items
+            except TimeoutError as exc:
+                raise XiaohongshuFavoritesError("小红书页面操作超时，请检查 Chrome 页面、网络或风控提示后重试。") from exc
             finally:
                 if owned_page:
-                    await owned_page.close()
+                    try:
+                        await asyncio.wait_for(owned_page.close(), timeout=5)
+                    except Exception:
+                        pass
                 else:
-                    await context.close()
+                    try:
+                        await asyncio.wait_for(context.close(), timeout=5)
+                    except Exception:
+                        pass
 
     async def _create_context(self, playwright: Any) -> BrowserContext:
         browser = await playwright.chromium.launch(headless=True)
         return await browser.new_context(storage_state=self.login_service.session.storage_state)
 
-    async def _open_favorites(self, page: Page) -> None:
+    async def _open_favorites(self, page: Page, report=None, check_cancelled=None) -> None:
+        report = report or (lambda *args, **kwargs: None)
+        check_cancelled = check_cancelled or (lambda: None)
+        check_cancelled(); report("locating_profile", "正在查找当前账号个人主页", page_url=page.url)
         me_link = page.locator("a[href^='/user/profile/']").filter(has_text="我").first
         try:
             await me_link.wait_for(state="visible", timeout=10000)
@@ -82,11 +108,13 @@ class XiaohongshuService:
         profile_url = self._normalize_profile_url(profile_href)
         if not profile_url:
             raise XiaohongshuLoginError("当前账号的个人主页入口无效。")
-        await page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
+        check_cancelled(); report("opening_profile", "正在进入个人主页", page_url=profile_url)
+        await asyncio.wait_for(page.goto(profile_url, wait_until="domcontentloaded", timeout=30000), timeout=35)
         if "login" in page.url.lower():
             raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
         favorites_tab = page.get_by_text("收藏", exact=True).first
         try:
+            check_cancelled(); report("opening_favorites", "正在打开收藏标签", page_url=page.url)
             await favorites_tab.wait_for(state="visible", timeout=15000)
             await favorites_tab.click()
             await page.wait_for_timeout(2000)
@@ -101,7 +129,8 @@ class XiaohongshuService:
         if href.startswith("/user/profile/"):
             return f"{self.BASE_URL}{href}"
         return None
-    async def _extract_items(self, page: Page, limit: int) -> list[ContentItem]:
+    async def _extract_items(self, page: Page, limit: int, report, check_cancelled) -> list[ContentItem]:
+        check_cancelled(); report("locating_items", "正在识别收藏卡片", page_url=page.url)
         selectors = [
             "section.note-item",
             "div.note-item",
@@ -110,14 +139,15 @@ class XiaohongshuService:
         ]
         for selector in selectors:
             if await page.locator(selector).count():
-                return await self._read_locator_items(page, selector, limit)
+                return await self._read_locator_items(page, selector, limit, report, check_cancelled)
         return []
 
-    async def _read_locator_items(self, page: Page, selector: str, limit: int) -> list[ContentItem]:
+    async def _read_locator_items(self, page: Page, selector: str, limit: int, report, check_cancelled) -> list[ContentItem]:
         results: list[ContentItem] = []
         locator = page.locator(selector)
         count = min(await locator.count(), limit)
         for index in range(count):
+            check_cancelled()
             node = locator.nth(index)
             title = await self._safe_inner_text(node.locator("a, .title, .footer, .note-content").first)
             href = await node.get_attribute("href")
@@ -127,8 +157,11 @@ class XiaohongshuService:
             text = self._sanitize_content(await self._safe_inner_text(node))
             content_type = ContentType.POST
             source_type = "小红书图文"
+            report("reading_item", f"正在读取第 {index + 1}/{count} 条收藏", current_index=index + 1, discovered=count, current_title=title or f"小红书收藏 {index + 1}", page_url=note_url or page.url)
             if note_url:
-                detail_text, is_video, extraction_status = await self._read_note_detail(page, note_url)
+                detail_text, is_video, extraction_status = await asyncio.wait_for(
+                    self._read_note_detail(page, note_url, report, check_cancelled, index + 1, count), timeout=75
+                )
                 if detail_text:
                     text = self._sanitize_content("\n".join(value for value in (title, detail_text) if value))
                 if is_video:
@@ -149,11 +182,14 @@ class XiaohongshuService:
             )
         return results
 
-    async def _read_note_detail(self, page: Page, note_url: str) -> tuple[str, bool, str]:
+    async def _read_note_detail(self, page: Page, note_url: str, report=None, check_cancelled=None, index: int = 1, count: int = 1) -> tuple[str, bool, str]:
+        report = report or (lambda *args, **kwargs: None)
+        check_cancelled = check_cancelled or (lambda: None)
         detail = None
         try:
-            detail = await page.context.new_page()
-            await detail.goto(note_url, wait_until="domcontentloaded", timeout=30000)
+            check_cancelled(); report("opening_detail", f"正在打开第 {index}/{count} 条详情", current_index=index, discovered=count, page_url=note_url)
+            detail = await asyncio.wait_for(page.context.new_page(), timeout=10)
+            await asyncio.wait_for(detail.goto(note_url, wait_until="domcontentloaded", timeout=30000), timeout=35)
             detail_text = ""
             detail_selector = ""
             for selector in ("#detail-desc", ".note-content", ".desc", "[class*='note-content']"):
@@ -173,7 +209,8 @@ class XiaohongshuService:
             if not await video.count():
                 return detail_text, False, "无需 OCR"
             video_source = await video.evaluate("node => node.currentSrc || node.src || node.querySelector('source')?.src || ''")
-            marker, ocr_text, resources = await self._extract_video_text(str(video_source or ""))
+            check_cancelled(); report("video_ocr", f"正在识别第 {index}/{count} 条视频文字", current_index=index, discovered=count, page_url=note_url)
+            marker, ocr_text, resources = await asyncio.wait_for(self._extract_video_text(str(video_source or "")), timeout=60)
             parts = [detail_text, marker]
             if ocr_text:
                 parts.extend(["[视频 OCR 全文]", ocr_text])
@@ -186,7 +223,10 @@ class XiaohongshuService:
             return f"[详情内容提取失败：{message}]", False, "详情提取失败"
         finally:
             if detail is not None:
-                await detail.close()
+                try:
+                    await asyncio.wait_for(detail.close(), timeout=5)
+                except Exception:
+                    pass
 
     async def _extract_video_text(self, video_source: str) -> tuple[str, str, list[dict[str, str]]]:
         if not video_source.startswith(("http://", "https://")):
@@ -258,4 +298,3 @@ class XiaohongshuService:
                 }
             )
         return cookies
-

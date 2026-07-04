@@ -130,6 +130,12 @@ footer { padding: 24px; border-top: 3px solid var(--black); text-align: left; fo
 .xhs-progress-head, .xhs-stats { display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 12px/1.4 "Space Mono", monospace; }
 .xhs-progress-head strong { font-size: 15px; }
 .xhs-progress p { margin: 0; }
+.xhs-page { padding: 8px; border: 2px solid var(--black); overflow-wrap: anywhere; background: var(--sunken); font: 11px/1.5 "Space Mono", monospace; }
+.xhs-health { display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 11px/1.4 "Space Mono", monospace; }
+.xhs-health .healthy { color: var(--success); }
+.xhs-health .stale, .xhs-health strong { color: var(--error); }
+.xhs-actions { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+.xhs-actions .danger-button { min-height: 56px; }
 .xhs-stats { display: grid; grid-template-columns: repeat(2, 1fr); padding-top: 12px; border-top: 2px solid var(--black); }
 .xhs-stats b { float: right; }
 @keyframes xhs-progress-slide { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
@@ -159,4 +165,5 @@ a.button { text-decoration: none; }
   .button-row .button { flex: 1 1 auto; }
   .xhs-steps { grid-template-columns: 1fr; }
   .xhs-progress-head { align-items: flex-start; flex-direction: column; }
+  .xhs-health, .xhs-actions { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; }
 }
