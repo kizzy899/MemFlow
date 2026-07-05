@@ -19,7 +19,5 @@ yt-dlp==2026.3.3
 imageio-ffmpeg==0.6.0
 rapidocr==3.9.1
 onnxruntime==1.27.0
-yt-dlp==2026.3.3
-imageio-ffmpeg==0.6.0
-rapidocr==3.9.1
-onnxruntime==1.27.0
+faster-whisper==1.2.1
+agent-reach==1.5.0

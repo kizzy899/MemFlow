@@ -25,7 +25,12 @@ def test_old_sqlite_schema_is_upgraded_idempotently(tmp_path) -> None:
     run_sqlite_migrations(engine)
 
     columns = {column["name"] for column in inspect(engine).get_columns("content_items")}
-    assert {"input_type", "normalized_url", "content_hash", "clean_content", "fetch_status", "ai_status", "key_concepts", "related_entities", "knowledge_relations", "archive_markdown", "source_type", "archived_at"} <= columns
+    assert {
+        "input_type", "normalized_url", "content_hash", "clean_content", "fetch_status", "ai_status",
+        "key_concepts", "related_entities", "knowledge_relations", "archive_markdown", "source_type",
+        "archived_at", "media_fetch_status", "media_provider", "ocr_status", "transcription_status",
+        "content_completeness", "media_error_message",
+    } <= columns
     with engine.connect() as connection:
         rows = connection.execute(
             text(
@@ -41,6 +46,16 @@ def test_old_sqlite_schema_is_upgraded_idempotently(tmp_path) -> None:
     assert by_id["text-id"]["input_type"] == "text"
     assert len(by_id["text-id"]["content_hash"]) == 64
     assert by_id["text-id"]["clean_content"] == " same   text "
+    with engine.connect() as connection:
+        defaults = connection.execute(
+            text("SELECT media_fetch_status,ocr_status,transcription_status,content_completeness FROM content_items WHERE id='url-id'")
+        ).mappings().one()
+    assert defaults == {
+        "media_fetch_status": "skipped",
+        "ocr_status": "skipped",
+        "transcription_status": "skipped",
+        "content_completeness": "unknown",
+    }
     assert "ix_content_items_normalized_url" in indexes
     assert "ix_content_items_content_hash" in indexes
     engine.dispose()

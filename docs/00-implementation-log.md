@@ -424,3 +424,17 @@
 变更文件：`app/services/xiaohongshu_service.py`、`app/services/xhs_sync_manager.py`、`app/routers/xiaohongshu.py`、`frontend/src/App.tsx`、`frontend/src/styles.css`、前后端测试及 `docs/23-xhs-sync-jobs-notion-stability.md`。新增公共 API `POST /api/xhs/sync/cancel`；任务状态新增 cancelling、cancelled，响应新增 step、discovered、page_url、last_progress_at、heartbeat_at；无持久化字段变化。
 
 失败行为：连接、新页面、导航、详情、OCR 和清理均有上限；顶层页面超时进入 failed 并返回可读错误，单条详情失败保留明确标记；取消最终进入 cancelled。验证结果：专项后端 18 passed；完整后端 105 passed；前端 Vitest 9 passed；Vite production build、Python compileall 与 `git diff --check` 通过。pytest 仅提示受控环境无权创建 `.pytest_cache`。
+
+## 小红书视频完整内容流水线（2026-07-05）
+
+实施顺序：先完成 Python 3.13 依赖闸门并安装固定版本 Agent Reach、OpenCLI、faster-whisper；Agent Reach 安装时排除会自动导入浏览器 Cookie 的渠道。随后实现 Browser/OpenCLI Provider 链、本地媒体目录约束、Agent Search OCR、Whisper CPU INT8 转录和内容合并；再迁移数据库字段、更新 Notion Toggle、增加 Provider 与历史视频重处理 API/Console，最后执行自动化回归和真实 CDP PoC。
+
+关键决策：收藏列表继续由 CDP 9223 获取；OpenCLI 只复用 CDP 环境变量，不复制 Cookie、不安装 Browser Bridge；只有 Browser 媒体缺失或下载失败才降级。完整未截断文本写入本地 `raw_text`，AI 输入封顶 60,000 字符；媒体任务目录始终清理。旧视频默认跳过，只允许用户选 1–20 条重处理。OpenCLI 真实下载未验证前 Provider 显示不可用，CDP/认证/超时会在当前批次熔断。
+
+变更文件：配置、依赖和忽略规则；`app/services/xhs_media_service.py`、小红书抓取/任务/容器、内容流水线、Notion 服务；ContentItem 模型、SQLite 迁移、schemas/items/XHS routers；Console 组件和样式；后端/前端测试；计划文件、README 与 docs 模块文档。
+
+公共 API 新增 `GET /api/xhs/providers`、`POST /api/xhs/providers/opencli/check`、`GET /api/xhs/media/candidates`、`POST /api/xhs/media/reprocess`。新增持久化字段 `media_fetch_status`、`media_provider`、`ocr_status`、`transcription_status`、`content_completeness`、`media_error_message`。媒体状态为 `pending|processing|success|empty|failed|skipped|cancelled`，旧记录默认 `skipped/unknown`；同步步骤扩展为媒体下载、OpenCLI 降级、OCR、转录、合并、AI 和 Notion。
+
+失败行为：不合法 URL、路径逃逸、下载失败/超时、OpenCLI 缺失/CDP/认证/空结果、超长视频及取消均有稳定错误；失败不伪造内容，正文可按 `partial` 继续整理；错误、API 和 DOM 不含 Cookie、查询参数或本地媒体路径。Notion 重处理只替换顶层同名视频 Toggle。
+
+验证结果：faster-whisper 依赖在 Python 3.13 使用兼容 wheel 安装成功；后端完整回归 112 passed，前端 Vitest 9 passed，Vite production build 通过（194 modules），compileall、37 条 OpenAPI 路由检查、旧认证变量扫描和 `git diff --check` 通过。pytest 仅提示受控环境无权写入 `.pytest_cache`。真实 PoC 可连接 CDP 9223，但首条收藏详情返回小红书 `300031`，OpenCLI 未取得可验证媒体，故真实媒体闸门记录为 No-Go；未下载 Whisper 模型或宣称真实转录成功。

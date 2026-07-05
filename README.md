@@ -4,6 +4,8 @@ MemFlow 是基于 FastAPI、SQLite、OpenAI 兼容接口和 Notion API 的个人
 
 项目内置 `agent-search` Skill，可对视频抽帧执行本地 OCR，并从文章或 OCR 文字中提取项目、Agent Skill 与推荐网页地址。详见 `docs/22-agent-search-skill.md`。
 
+小红书视频支持 Browser/OpenCLI 媒体 Provider 降级、本地画面 OCR、faster-whisper 语音转录及手动历史重处理；完整状态、安全边界和真实 PoC 结果见 `docs/24-xhs-video-content-pipeline.md`。
+
 完整设计和实施记录见 [docs/README.md](docs/README.md)。仓库要求每个新功能或模块在同一次变更中更新模块文档和实施日志。
 
 ## 安装与启动
@@ -167,7 +169,7 @@ cd ..
 
 浏览器打开 `http://127.0.0.1:8000/console`。开发模式可在另一个终端运行 `cd frontend && npm run dev`，访问 `http://127.0.0.1:5173/console/`。
 
-控制台提供连接现有 Chrome 的小红书授权、账号管理、Notion 配置、inbox 队列、后台整理进度、最近 Notion 结果和 hot.md。小红书浏览器状态使用 `MEMFLOW_AUTH_KEY` 加密保存在本机，前端不接触 Cookie；CDP 默认只连接 `127.0.0.1:9223`，配置和控制 API 仅允许本机访问。
+控制台提供连接现有 Chrome 的小红书授权、账号管理、收藏与历史视频重处理、Notion 配置、inbox 队列、后台整理进度、最近 Notion 结果和 hot.md。小红书浏览器状态使用 `MEMFLOW_AUTH_KEY` 加密保存在本机，前端不接触 Cookie；CDP 默认只连接 `127.0.0.1:9223`，配置和控制 API 仅允许本机访问。
 
 前端验证：
 

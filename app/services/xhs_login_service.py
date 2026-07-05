@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
+import httpx
 from app.services.auth.cookie_store import CookieStore
 from app.services.auth.session_manager import AuthState, SessionManager, utcnow
 
@@ -47,7 +48,7 @@ class XiaohongshuLoginService:
         owned_page = None
         try:
             playwright = await async_playwright().start()
-            browser = await playwright.chromium.connect_over_cdp(self.cdp_url, timeout=5000)
+            browser = await playwright.chromium.connect_over_cdp(await self.resolve_cdp_endpoint(), timeout=5000)
             if not browser.contexts:
                 raise LoginServiceError("CDP_NO_CONTEXT", "Chrome 没有可用的浏览器上下文")
             context = browser.contexts[0]
@@ -85,6 +86,20 @@ class XiaohongshuLoginService:
     def _require_key(self):
         if not self.store.configured:
             raise LoginServiceError("AUTH_KEY_MISSING", "MEMFLOW_AUTH_KEY is not configured", retryable=False)
+
+    async def resolve_cdp_endpoint(self) -> str:
+        if self.cdp_url.startswith(("ws://", "wss://")):
+            return self.cdp_url
+        try:
+            async with httpx.AsyncClient(trust_env=False, timeout=5) as client:
+                response = await client.get(f"{self.cdp_url}/json/version")
+                response.raise_for_status()
+                endpoint = str(response.json().get("webSocketDebuggerUrl", ""))
+                if endpoint.startswith(("ws://", "wss://")):
+                    return endpoint
+        except Exception as exc:
+            raise LoginServiceError("CDP_UNAVAILABLE", "无法读取 Chrome 调试端点", str(exc)) from exc
+        raise LoginServiceError("CDP_UNAVAILABLE", "Chrome 未返回 WebSocket 调试地址")
 
     async def start_login(self):
         self._require_key()

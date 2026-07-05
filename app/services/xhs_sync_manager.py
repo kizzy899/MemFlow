@@ -41,6 +41,17 @@ class XiaohongshuSyncManager:
             threading.Thread(target=self._heartbeat, args=(task_id,), daemon=True, name="memflow-xhs-heartbeat").start()
             return dict(self._state)
 
+    def start_reprocess(self, item_ids: list[str]) -> dict[str, Any]:
+        with self._lock:
+            if self._state["status"] in {"fetching", "processing", "cancelling"}:
+                raise RuntimeError("Xiaohongshu sync is already running")
+            self._cancel_event = threading.Event(); self._heartbeat_stop = threading.Event()
+            task_id, now = str(uuid.uuid4()), self._now()
+            self._state = {**self._idle(), "task_id": task_id, "status": "processing", "phase": "processing", "step": "fetching_media", "message": "正在重新处理历史视频", "requested": len(item_ids), "fetched": len(item_ids), "started_at": now, "updated_at": now}
+            threading.Thread(target=self._run_reprocess, args=(task_id, item_ids), daemon=True, name="memflow-xhs-reprocess").start()
+            threading.Thread(target=self._heartbeat, args=(task_id,), daemon=True, name="memflow-xhs-heartbeat").start()
+            return dict(self._state)
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             return dict(self._state)
@@ -105,6 +116,35 @@ class XiaohongshuSyncManager:
                     status="failed", phase="failed", message="收藏任务执行失败",
                     current_title="", last_error=str(exc), finished_at=now, updated_at=now,
                 )
+        finally:
+            self._heartbeat_stop.set()
+
+    def _run_reprocess(self, task_id: str, item_ids: list[str]) -> None:
+        try:
+            with SessionLocal() as db:
+                from app.models.content_item import ContentItem, NotionSyncStatus
+                for index, item_id in enumerate(item_ids, start=1):
+                    if self._cancel_event.is_set(): raise asyncio.CancelledError()
+                    item = db.get(ContentItem, item_id)
+                    if item is None: raise RuntimeError(f"记录不存在：{item_id}")
+                    with self._lock:
+                        self._state.update(current_index=index, current_title=item.title or "未命名视频", message="正在重新提取视频内容", updated_at=self._now())
+                    incoming = self.xhs_service.reprocess_saved_item(item, self._fetch_progress, self._cancel_event)
+                    incoming.notion_sync_status = NotionSyncStatus.PENDING
+                    processed = self.content_pipeline_service.process_xiaohongshu_item(db, incoming)
+                    with self._lock:
+                        self._state["processed"] += 1
+                        if processed.process_status.value == "completed": self._state["success"] += 1
+                        else: self._state["failed"] += 1; self._state["last_error"] = processed.error_message
+            with self._lock:
+                now, failed = self._now(), self._state["failed"]
+                self._state.update(status="failed" if failed else "success", phase="completed", step="completed", message="历史视频重处理完成" if not failed else "历史视频重处理部分失败", current_title="", finished_at=now, updated_at=now)
+        except asyncio.CancelledError:
+            with self._lock:
+                now=self._now(); self._state.update(status="cancelled",phase="cancelled",step="cancelled",message="任务已取消",current_title="",finished_at=now,updated_at=now)
+        except Exception as exc:
+            with self._lock:
+                now=self._now(); self._state.update(status="failed",phase="failed",step="failed",message="历史视频重处理失败",last_error=str(exc),current_title="",finished_at=now,updated_at=now)
         finally:
             self._heartbeat_stop.set()
 

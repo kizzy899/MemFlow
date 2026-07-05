@@ -38,4 +38,19 @@ def build_notion_page_children(data: object) -> list[dict[str, Any]]:
  blocks += [_text_block("heading_2","原始信息")]
  raw=[("原始链接",_value(data,"source_url","")),("原文语言",_value(data,"original_language",_value(data,"language","未知"))),("是否翻译",_value(data,"is_translated",False)),("本地条目 ID",_value(data,"id",_value(data,"item_id",""))),("创建时间",_value(data,"created_at",""))]
  blocks += [_text_block("bulleted_list_item",f"{k}：{v if v not in (None,'') else '无'}") for k,v in raw]
+ video_toggle=build_video_content_toggle(data)
+ if video_toggle: blocks.append(video_toggle)
  return blocks
+
+def build_video_content_toggle(data: object) -> dict[str, Any] | None:
+ content_type=getattr(_value(data,"content_type",""),"value",_value(data,"content_type",""))
+ source_type=str(_value(data,"source_type",""))
+ if str(content_type) != "video" and not source_type.startswith("小红书视频"): return None
+ raw=str(_value(data,"raw_text","")).strip()
+ if not raw: raw="未提取到视频正文、画面文字或语音转录。"
+ chunks=[raw[index:index+1800] for index in range(0,len(raw),1800)]
+ statuses=(f"Provider: {_value(data,'media_provider','无')}；媒体: {_value(data,'media_fetch_status','skipped')}；"
+           f"OCR: {_value(data,'ocr_status','skipped')}；语音: {_value(data,'transcription_status','skipped')}；"
+           f"完整度: {_value(data,'content_completeness','unknown')}")
+ children=[_text_block("paragraph",statuses),*[_text_block("paragraph",chunk) for chunk in chunks]]
+ return {"object":"block","type":"toggle","toggle":{"rich_text":[{"type":"text","text":{"content":"MemFlow 视频内容"}}],"children":children}}

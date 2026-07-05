@@ -23,6 +23,15 @@ class Settings(BaseSettings):
 
     memflow_auth_key: str = Field(default="", alias="MEMFLOW_AUTH_KEY")
     chrome_cdp_url: str = Field(default="http://127.0.0.1:9223", alias="CHROME_CDP_URL")
+    opencli_command: str = Field(default="opencli", alias="OPENCLI_COMMAND")
+    xhs_media_provider_chain: str = Field(default="browser,opencli", alias="XHS_MEDIA_PROVIDER_CHAIN")
+    video_ocr_enabled: bool = Field(default=True, alias="VIDEO_OCR_ENABLED")
+    video_transcription_enabled: bool = Field(default=True, alias="VIDEO_TRANSCRIPTION_ENABLED")
+    whisper_model: str = Field(default="small", alias="WHISPER_MODEL")
+    whisper_device: str = Field(default="cpu", alias="WHISPER_DEVICE")
+    whisper_compute_type: str = Field(default="int8", alias="WHISPER_COMPUTE_TYPE")
+    video_step_timeout_seconds: int = Field(default=180, alias="VIDEO_STEP_TIMEOUT_SECONDS")
+    video_max_duration_seconds: int = Field(default=1800, alias="VIDEO_MAX_DURATION_SECONDS")
 
     translation_output_dir: str = Field(default="files/translated", alias="TRANSLATION_OUTPUT_DIR")
     raw_output_dir: str = Field(default="files/raw", alias="RAW_OUTPUT_DIR")
@@ -40,6 +49,14 @@ class Settings(BaseSettings):
     @property
     def raw_output_path(self) -> Path:
         return (self.base_dir / self.raw_output_dir).resolve()
+
+    @property
+    def xhs_media_temp_path(self) -> Path:
+        return (self.base_dir / "data" / "xhs-media-tmp").resolve()
+
+    @property
+    def whisper_model_path(self) -> Path:
+        return (self.base_dir / "data" / "models" / "whisper").resolve()
 
     @property
     def sqlite_file_path(self) -> Optional[Path]:

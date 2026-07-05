@@ -77,3 +77,26 @@ def test_xhs_sync_cancel_endpoint(monkeypatch):
         response = client.post("/api/xhs/sync/cancel")
         assert response.status_code == 200
         assert response.json() == state
+
+
+def test_xhs_provider_health_and_manual_video_reprocess(monkeypatch):
+    from app.db import SessionLocal
+    from app.models.content_item import ContentItem, ContentType, SourcePlatform
+    item = ContentItem(title="历史视频", source_url="https://www.xiaohongshu.com/explore/test-media", source_platform=SourcePlatform.XIAOHONGSHU, content_type=ContentType.VIDEO, media_fetch_status="failed", ocr_status="failed", transcription_status="skipped", content_completeness="partial")
+    with SessionLocal() as db:
+        db.add(item); db.commit(); item_id = item.id
+    try:
+        with TestClient(app) as client:
+            manager = app.state.container.xhs_sync_manager
+            monkeypatch.setattr(manager, "start_reprocess", lambda ids: {"task_id": "media-1", "status": "processing", "requested": len(ids)})
+            health = client.get("/api/xhs/providers")
+            assert health.status_code == 200
+            assert "cookie" not in health.text.lower()
+            candidates = client.get("/api/xhs/media/candidates").json()["items"]
+            assert any(row["item_id"] == item_id for row in candidates)
+            response = client.post("/api/xhs/media/reprocess", json={"item_ids": [item_id]})
+            assert response.status_code == 202 and response.json()["requested"] == 1
+    finally:
+        with SessionLocal() as db:
+            saved = db.get(ContentItem, item_id)
+            if saved: db.delete(saved); db.commit()

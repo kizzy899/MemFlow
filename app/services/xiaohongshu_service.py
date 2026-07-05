@@ -19,10 +19,12 @@ class XiaohongshuService:
     HOME_URL = "https://www.xiaohongshu.com/explore"
     BASE_URL = "https://www.xiaohongshu.com"
 
-    def __init__(self, settings: Settings, login_service: XiaohongshuLoginService | None = None, agent_search_service: Any | None = None) -> None:
+    def __init__(self, settings: Settings, login_service: XiaohongshuLoginService | None = None, agent_search_service: Any | None = None, media_pipeline: Any | None = None) -> None:
         self.settings = settings
         self.login_service = login_service
         self.agent_search_service = agent_search_service
+        self.media_pipeline = media_pipeline
+        self._media_results: dict[str, dict[str, Any]] = {}
 
     async def fetch_favorites(self, limit: int = 20, progress=None, cancel_event: threading.Event | None = None) -> list[ContentItem]:
         if os.name == "nt":
@@ -56,7 +58,7 @@ class XiaohongshuService:
             if self.login_service.cdp_connected:
                 check_cancelled(); report("connecting", "正在连接 Chrome 远程调试端口")
                 cdp_browser = await asyncio.wait_for(
-                    playwright.chromium.connect_over_cdp(self.login_service.cdp_url, timeout=8000), timeout=10
+                    playwright.chromium.connect_over_cdp(await self.login_service.resolve_cdp_endpoint(), timeout=8000), timeout=10
                 )
                 if not cdp_browser.contexts:
                     raise XiaohongshuLoginError("Chrome CDP 没有可用的浏览器上下文。")
@@ -73,7 +75,7 @@ class XiaohongshuService:
                 if "login" in page.url.lower():
                     raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
                 await self._open_favorites(page, report, check_cancelled)
-                items = await self._extract_items(page, limit, report, check_cancelled)
+                items = await self._extract_items(page, limit, report, check_cancelled, cancel_event or threading.Event())
                 if not items:
                     raise XiaohongshuFavoritesError("已进入个人收藏页，但没有识别到收藏内容；可能收藏为空或页面结构已变化。")
                 return items
@@ -129,7 +131,7 @@ class XiaohongshuService:
         if href.startswith("/user/profile/"):
             return f"{self.BASE_URL}{href}"
         return None
-    async def _extract_items(self, page: Page, limit: int, report, check_cancelled) -> list[ContentItem]:
+    async def _extract_items(self, page: Page, limit: int, report, check_cancelled, cancel_event: threading.Event) -> list[ContentItem]:
         check_cancelled(); report("locating_items", "正在识别收藏卡片", page_url=page.url)
         selectors = [
             "section.note-item",
@@ -139,10 +141,10 @@ class XiaohongshuService:
         ]
         for selector in selectors:
             if await page.locator(selector).count():
-                return await self._read_locator_items(page, selector, limit, report, check_cancelled)
+                return await self._read_locator_items(page, selector, limit, report, check_cancelled, cancel_event)
         return []
 
-    async def _read_locator_items(self, page: Page, selector: str, limit: int, report, check_cancelled) -> list[ContentItem]:
+    async def _read_locator_items(self, page: Page, selector: str, limit: int, report, check_cancelled, cancel_event: threading.Event) -> list[ContentItem]:
         results: list[ContentItem] = []
         locator = page.locator(selector)
         count = min(await locator.count(), limit)
@@ -160,7 +162,7 @@ class XiaohongshuService:
             report("reading_item", f"正在读取第 {index + 1}/{count} 条收藏", current_index=index + 1, discovered=count, current_title=title or f"小红书收藏 {index + 1}", page_url=note_url or page.url)
             if note_url:
                 detail_text, is_video, extraction_status = await asyncio.wait_for(
-                    self._read_note_detail(page, note_url, report, check_cancelled, index + 1, count), timeout=75
+                    self._read_note_detail(page, note_url, report, check_cancelled, index + 1, count, cancel_event), timeout=self.settings.video_step_timeout_seconds + 90
                 )
                 if detail_text:
                     text = self._sanitize_content("\n".join(value for value in (title, detail_text) if value))
@@ -178,11 +180,12 @@ class XiaohongshuService:
                     raw_text=text,
                     raw_excerpt=text[:200],
                     external_id=external_id,
+                    **self._media_item_fields(note_url),
                 )
             )
         return results
 
-    async def _read_note_detail(self, page: Page, note_url: str, report=None, check_cancelled=None, index: int = 1, count: int = 1) -> tuple[str, bool, str]:
+    async def _read_note_detail(self, page: Page, note_url: str, report=None, check_cancelled=None, index: int = 1, count: int = 1, cancel_event: threading.Event | None = None) -> tuple[str, bool, str]:
         report = report or (lambda *args, **kwargs: None)
         check_cancelled = check_cancelled or (lambda: None)
         detail = None
@@ -209,14 +212,15 @@ class XiaohongshuService:
             if not await video.count():
                 return detail_text, False, "无需 OCR"
             video_source = await video.evaluate("node => node.currentSrc || node.src || node.querySelector('source')?.src || ''")
+            if self.media_pipeline:
+                result = await asyncio.to_thread(self.media_pipeline.process, note_url, str(video_source or ""), detail_text, report, cancel_event or threading.Event())
+                self._media_results[note_url] = result
+                return result["raw_text"], True, self._media_status_label(result)
             check_cancelled(); report("video_ocr", f"正在识别第 {index}/{count} 条视频文字", current_index=index, discovered=count, page_url=note_url)
             marker, ocr_text, resources = await asyncio.wait_for(self._extract_video_text(str(video_source or "")), timeout=60)
             parts = [detail_text, marker]
-            if ocr_text:
-                parts.extend(["[视频 OCR 全文]", ocr_text])
-            if resources:
-                parts.append("[视频中识别到的资源链接]")
-                parts.extend(f"{entry.get('label') or '名称待确认'}｜{entry['url']}" for entry in resources)
+            if ocr_text: parts.extend(["[视频 OCR 全文]", ocr_text])
+            if resources: parts.extend(["[视频中识别到的资源链接]", *(f"{entry.get('label') or '名称待确认'}｜{entry['url']}" for entry in resources)])
             return "\n".join(part for part in parts if part), True, marker.strip("[]")
         except Exception as exc:
             message = " ".join(str(exc).split())[:200] or type(exc).__name__
@@ -227,6 +231,30 @@ class XiaohongshuService:
                     await asyncio.wait_for(detail.close(), timeout=5)
                 except Exception:
                     pass
+
+    def _media_item_fields(self, note_url: str | None) -> dict[str, Any]:
+        result = self._media_results.pop(note_url, None) if note_url else None
+        if not result: return {}
+        fields = {key: result[key] for key in ("media_fetch_status", "media_provider", "ocr_status", "transcription_status", "content_completeness", "media_error_message")}
+        fields["clean_content"] = result.get("ai_text", result.get("raw_text", ""))
+        return fields
+
+    def reprocess_saved_item(self, item: ContentItem, progress, cancel_event: threading.Event) -> ContentItem:
+        if not self.media_pipeline or not item.source_url:
+            raise XiaohongshuFavoritesError("该条目缺少媒体流水线或小红书笔记链接。")
+        body = item.raw_text.split("[视频画面 OCR]", 1)[0].split("[视频语音转录]", 1)[0].strip()
+        result = self.media_pipeline.process(item.source_url, "", body, progress, cancel_event)
+        item.raw_text = result["raw_text"]
+        item.clean_content = result["ai_text"]
+        for key in ("media_fetch_status", "media_provider", "ocr_status", "transcription_status", "content_completeness", "media_error_message"):
+            setattr(item, key, result[key])
+        item.content_type = ContentType.VIDEO
+        item.source_type = f"小红书视频（{self._media_status_label(result)}）"
+        return item
+
+    @staticmethod
+    def _media_status_label(result: dict[str, Any]) -> str:
+        return f"媒体:{result['media_fetch_status']} OCR:{result['ocr_status']} 语音:{result['transcription_status']}"
 
     async def _extract_video_text(self, video_source: str) -> tuple[str, str, list[dict[str, str]]]:
         if not video_source.startswith(("http://", "https://")):

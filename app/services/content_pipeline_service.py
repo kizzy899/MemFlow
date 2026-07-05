@@ -168,9 +168,16 @@ class ContentPipelineService:
         if existing:
             item.title = incoming.title or item.title
             item.raw_text = incoming.raw_text
+            item.clean_content = incoming.clean_content or incoming.raw_text or ""
             item.raw_excerpt = incoming.raw_excerpt
             item.content_type = incoming.content_type
             item.source_type = incoming.source_type
+            item.media_fetch_status = incoming.media_fetch_status or "skipped"
+            item.media_provider = incoming.media_provider or ""
+            item.ocr_status = incoming.ocr_status or "skipped"
+            item.transcription_status = incoming.transcription_status or "skipped"
+            item.content_completeness = incoming.content_completeness or "unknown"
+            item.media_error_message = incoming.media_error_message or ""
             item.author = ""
             item.notion_sync_status = NotionSyncStatus.PENDING
 
@@ -179,11 +186,12 @@ class ContentPipelineService:
         item.fetch_status = StageStatus.SUCCESS
         self.item_service.save(db, item)
         try:
-            analysis = self.ai_service.analyze(item.source_url or "", item.title, item.raw_text)
+            ai_input = item.clean_content or item.raw_text
+            analysis = self.ai_service.analyze(item.source_url or "", item.title, ai_input)
             self._apply_analysis(item, analysis)
             if item.source_type.startswith("小红书视频"):
                 item.content_type = ContentType.VIDEO
-            item.clean_content = item.raw_text
+            item.clean_content = ai_input
             item.ai_status = StageStatus.SUCCESS
             item.process_status = ProcessStatus.COMPLETED
             item.error_message = ""

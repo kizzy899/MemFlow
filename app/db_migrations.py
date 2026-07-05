@@ -22,6 +22,12 @@ SQLITE_COLUMNS = {
     "archived_at": "DATETIME",
     "fetch_status": "VARCHAR(7) NOT NULL DEFAULT 'skipped'",
     "ai_status": "VARCHAR(7) NOT NULL DEFAULT 'skipped'",
+    "media_fetch_status": "VARCHAR(20) NOT NULL DEFAULT 'skipped'",
+    "media_provider": "VARCHAR(30) NOT NULL DEFAULT ''",
+    "ocr_status": "VARCHAR(20) NOT NULL DEFAULT 'skipped'",
+    "transcription_status": "VARCHAR(20) NOT NULL DEFAULT 'skipped'",
+    "content_completeness": "VARCHAR(20) NOT NULL DEFAULT 'unknown'",
+    "media_error_message": "TEXT NOT NULL DEFAULT ''",
 }
 
 

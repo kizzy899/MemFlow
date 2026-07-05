@@ -142,6 +142,11 @@ def _summary(item: ContentItem) -> ItemSummary:
         notion_page_url=item.notion_page_url or "",
         created_at=item.created_at,
         updated_at=item.updated_at,
+        media_fetch_status=item.media_fetch_status,
+        media_provider=item.media_provider,
+        ocr_status=item.ocr_status,
+        transcription_status=item.transcription_status,
+        content_completeness=item.content_completeness,
     )
 
 
@@ -171,6 +176,12 @@ def _detail(item: ContentItem) -> ItemDetail:
         notion_page_url=item.notion_page_url or "",
         notion_error=item.notion_error_message or None,
         error_message=item.error_message or None,
+        media_fetch_status=item.media_fetch_status,
+        media_provider=item.media_provider,
+        ocr_status=item.ocr_status,
+        transcription_status=item.transcription_status,
+        content_completeness=item.content_completeness,
+        media_error_message=item.media_error_message or None,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )

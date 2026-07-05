@@ -12,6 +12,7 @@ type Inbox = { version: string; raw_content: string; pending_item_count: number;
 type Task = { task_id: string | null; status: 'idle' | 'processing' | 'success' | 'failed'; current_url: string; processed: number; success: number; skipped_duplicate: number; failed: number; last_error: string }
 type XhsTask = { task_id: string | null; status: 'idle' | 'fetching' | 'processing' | 'cancelling' | 'cancelled' | 'success' | 'failed'; phase: string; step: string; message: string; requested: number; fetched: number; discovered: number; processed: number; success: number; failed: number; current_index: number; current_title: string; page_url: string; last_error: string; started_at: string | null; updated_at: string | null; last_progress_at: string | null; heartbeat_at: string | null; finished_at: string | null }
 type RecentItem = { item_id: string; title: string; original_url: string; normalized_url: string; notion_url: string; created_at: string; status: string }
+type MediaCandidate = { item_id: string; title: string; media_fetch_status: string; media_provider: string; ocr_status: string; transcription_status: string; content_completeness: string; updated_at: string }
 
 const emptyConfig: Config = {
   notion: { configured: false, token_saved: false, token_length: 0, database_id: '', check: { status: 'unknown', message: '尚未检测' } },
@@ -62,7 +63,7 @@ function FavoriteSyncPanel({ enabled }: { enabled: boolean }) {
       .finally(() => setSyncing(false))
   }
   const cancel = () => api<XhsTask>('/api/xhs/sync/cancel', { method: 'POST' }).then(updateTask).catch(value => setError(value.message))
-  const stepLabels: Record<string, string> = { connecting: '连接 Chrome', opening_page: '创建标签页', opening_browser: '启动浏览器', opening_home: '打开小红书首页', locating_profile: '查找个人主页', opening_profile: '进入个人主页', opening_favorites: '打开收藏标签', locating_items: '识别收藏卡片', reading_item: '读取收藏详情', opening_detail: '打开收藏详情', video_ocr: '识别视频文字' }
+  const stepLabels: Record<string, string> = { connecting: '连接 Chrome', opening_page: '创建标签页', opening_browser: '启动浏览器', opening_home: '打开小红书首页', locating_profile: '查找个人主页', opening_profile: '进入个人主页', opening_favorites: '打开收藏标签', locating_items: '识别收藏卡片', reading_item: '读取收藏详情', opening_detail: '打开收藏详情', fetching_media: '下载视频', opencli_download: 'OpenCLI 降级下载', video_ocr: '识别画面文字', audio_transcription: 'Whisper 语音转录', assembling_content: '合并视频内容', ai_analysis: 'AI 分析', notion_sync: '同步 Notion' }
   const statusLabel = task?.status === 'fetching' ? (stepLabels[task.step] || '读取收藏列表') : task?.status === 'processing' ? 'AI 分析并同步 Notion' : task?.status === 'cancelling' ? '正在取消' : task?.status === 'cancelled' ? '已取消' : task?.status === 'success' ? '任务完成' : task?.status === 'failed' ? '任务失败' : '等待开始'
   return <Card title="读取收藏" action={<Badge status={active ? 'processing' : enabled ? 'configured' : 'unknown'}>{active ? statusLabel : enabled ? '可读取' : '未连接 Chrome'}</Badge>}>
     <div className="sync-panel home-sync">
@@ -80,6 +81,26 @@ function FavoriteSyncPanel({ enabled }: { enabled: boolean }) {
       {enabled ? active ? <div className="xhs-actions"><button className="button large" disabled>{statusLabel}</button><button className="button danger-button" disabled={task?.status === 'cancelling'} onClick={() => void cancel()}>{task?.status === 'cancelling' ? '正在取消…' : '取消任务'}</button></div> : <button className="button large" disabled={syncing} onClick={() => void run()}>开始读取收藏</button> : <a className="button large" href="/console/login/xiaohongshu">先连接已登录的 Chrome</a>}
       {result && <p className="success-text" role="status">{result}</p>}{error && <p className="error-text" role="alert">{error}</p>}
     </div>
+  </Card>
+}
+
+function HistoricalMediaPanel() {
+  const [items, setItems] = useState<MediaCandidate[]>([])
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [provider, setProvider] = useState<any>(null)
+  const [message, setMessage] = useState('')
+  const load = useCallback(() => Promise.all([
+    api<{ items: MediaCandidate[] }>('/api/xhs/media/candidates').then(value => setItems(value.items)),
+    api<any>('/api/xhs/providers').then(setProvider),
+  ]), [])
+  useEffect(() => { void load() }, [load])
+  const toggle = (id: string) => setSelected(previous => { const next=new Set(previous); if(next.has(id))next.delete(id);else next.add(id);return next })
+  const start = () => api<XhsTask>('/api/xhs/media/reprocess', { method: 'POST', body: JSON.stringify({ item_ids: [...selected] }) }).then(value => { setMessage(`重处理任务已启动：${value.task_id?.slice(0,8)}`); setSelected(new Set()) }).catch(error => setMessage(error.message))
+  return <Card title="历史视频重处理" action={<Badge status={provider?.opencli?.available ? 'configured' : 'unknown'}>{provider?.opencli?.available ? `OpenCLI ${provider.opencli.version}` : 'OpenCLI 不可用'}</Badge>}>
+    <p className="hint">仅列出媒体、OCR、语音或完整度不足的视频；不会自动回填。</p>
+    <div className="media-candidates">{items.length ? items.map(item => <label className="media-candidate" key={item.item_id}><input type="checkbox" checked={selected.has(item.item_id)} onChange={() => toggle(item.item_id)} /><span><strong>{item.title || '未命名视频'}</strong><small>媒体 {item.media_fetch_status} · OCR {item.ocr_status} · 语音 {item.transcription_status} · {item.content_completeness}</small></span></label>) : <p className="empty">暂无需要重处理的视频</p>}</div>
+    <button className="button large" disabled={!selected.size} onClick={() => void start()}>重处理选中视频（{selected.size}）</button>
+    {message && <p className="hint" role="status">{message}</p>}
   </Card>
 }
 
@@ -179,6 +200,7 @@ export default function App() {
         </Card>
 
         <FavoriteSyncPanel enabled={Boolean(xhsSession?.loggedIn)} />
+        <HistoricalMediaPanel />
 
         <Card title="Notion 数据库配置" action={<Badge status={config.notion.configured ? 'configured' : 'unknown'}>{config.notion.configured ? '已配置' : '未配置'}</Badge>}>
           <form onSubmit={saveNotion} className="form-stack">

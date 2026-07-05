@@ -9,7 +9,7 @@
 - 将链接启发式分类为 `project`、`skill`、`recommended`；
 - 保留视频时间戳、OCR 平均置信度、链接标签和局部上下文。
 
-本版本不做音轨语音转写；“视频文字”指视频画面中实际可见的文字。视频下载使用 yt-dlp，临时文件写入已忽略提交的 `data/agent-search-tmp` 并在运行后清理。
+Agent Search 本身仍不做音轨语音转写；其“视频文字”只指画面中实际可见的文字。小红书流水线在 Skill 外并行调用 faster-whisper，再合并 OCR 与语音转录。视频下载使用 yt-dlp，临时文件写入已忽略提交的 `data/agent-search-tmp` 并在运行后清理。
 
 ## 使用方式
 
@@ -76,3 +76,5 @@ GitHub/GitLab/Gitee 仓库形状链接归为项目；包含 Skill、plugin、MCP
 ## 小红书收藏调用约定（2026-07-03）
 
 小红书收藏同步通过服务层调用视频提取，参数为 `interval=1.0`、`max_frames=1800`，以提高字幕和画面文字覆盖率。返回的 `text`、`segments`、`resources` 进入当前收藏条目的整理上下文；临时视频仍在调用结束后清理。空 `text` 被上游标记为“视频文字提取为空”，下载/OCR 异常被标记为“视频文字提取失败”。该集成不改变 `/api/agent-search/extract` 的公共契约和持久化边界。
+
+2026-07-05 起，上游先用 Browser/OpenCLI Provider 下载到受限任务目录，再把本地视频交给本 Skill，避免二次下载。Skill API 和持久化边界不变；语音由独立 Whisper 服务处理，见 [视频流水线](24-xhs-video-content-pipeline.md)。

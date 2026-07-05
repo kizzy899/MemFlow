@@ -10,7 +10,7 @@ from notion_client import Client
 from app.config import Settings
 from app.models.content_item import ContentItem
 from app.services.exceptions import ConfigError, NotionServiceError
-from app.services.notion_page_service import build_notion_page_children
+from app.services.notion_page_service import build_notion_page_children, build_video_content_toggle
 from app.services.archive_note_service import build_archive_children
 
 
@@ -156,6 +156,7 @@ class NotionService:
         try:
             if item.notion_page_id:
                 page = client.pages.update(page_id=item.notion_page_id, properties=properties)
+                self._replace_video_content(client, item.notion_page_id, item)
             else:
                 try:
                     page = client.pages.create(
@@ -170,6 +171,20 @@ class NotionService:
             return str(page["id"]), str(page.get("url", item.notion_page_url or ""))
         except Exception as exc:
             raise NotionServiceError(self.humanize_error(exc)) from exc
+
+    def _replace_video_content(self, client: Client, page_id: str, item: ContentItem) -> None:
+        toggle = build_video_content_toggle(item)
+        if not toggle:
+            return
+        response = client.blocks.children.list(block_id=page_id, page_size=100)
+        for block in response.get("results", []):
+            if block.get("type") != "toggle":
+                continue
+            rich = block.get("toggle", {}).get("rich_text", [])
+            label = "".join(str(part.get("plain_text", "")) for part in rich)
+            if label == "MemFlow 视频内容":
+                client.blocks.delete(block_id=block["id"])
+        client.blocks.children.append(block_id=page_id, children=[toggle])
 
 
     def ensure_archive_schema(self) -> None:

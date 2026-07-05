@@ -52,3 +52,11 @@ def test_rich_text_truncation_keeps_marker() -> None:
 
     assert len(content) == 2000
     assert content.endswith("...（内容过长已截断）")
+
+
+def test_video_page_contains_managed_video_toggle() -> None:
+    from app.services.notion_page_service import build_notion_page_children
+    item = ContentItem(title="视频", content_type=ContentType.VIDEO, source_type="小红书视频", raw_text="[视频语音转录]\n完整语音", media_provider="opencli")
+    toggles = [block for block in build_notion_page_children(item) if block["type"] == "toggle"]
+    assert len(toggles) == 1
+    assert toggles[0]["toggle"]["rich_text"][0]["text"]["content"] == "MemFlow 视频内容"

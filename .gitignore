@@ -12,6 +12,9 @@ logs/
 data/cookies/
 data/chrome-cdp-profile/
 data/agent-search-tmp/
+data/xhs-media-tmp/
+data/models/
+data/agent-reach-diagnostics/
 hot.md
 inbox/links.md
 inbox/.links.md.bak

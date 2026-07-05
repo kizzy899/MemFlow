@@ -117,6 +117,11 @@ class ItemSummary(BaseModel):
     notion_page_url: str = ""
     created_at: datetime
     updated_at: datetime
+    media_fetch_status: str = "skipped"
+    media_provider: str = ""
+    ocr_status: str = "skipped"
+    transcription_status: str = "skipped"
+    content_completeness: str = "unknown"
 
 
 class PaginationData(BaseModel):
@@ -162,6 +167,12 @@ class ItemDetail(BaseModel):
     notion_page_url: str = ""
     notion_error: Optional[str] = None
     error_message: Optional[str] = None
+    media_fetch_status: str = "skipped"
+    media_provider: str = ""
+    ocr_status: str = "skipped"
+    transcription_status: str = "skipped"
+    content_completeness: str = "unknown"
+    media_error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
