@@ -20,7 +20,7 @@
 
 Console 会在进入页面时恢复当前进程内任务状态，运行期间每秒轮询。进度区展示“读取收藏列表 → 分析与同步 → 完成”三阶段、读取阶段动态条、整理阶段确定进度、当前条目、成功/失败计数、耗时和任务短 ID。读取阶段无法从小红书页面获得可靠的逐条回调，因此使用不确定进度动画，不伪造百分比。
 
-抓取阶段进一步显示 `connecting`、`opening_page`、`opening_home`、`locating_profile`、`opening_profile`、`opening_favorites`、`locating_items`、`reading_item`、`opening_detail`、`video_ocr`。后台每 2 秒更新心跳，步骤变化更新 `last_progress_at`；同一步超过 45 秒时前端提示正在等待超时。CDP/新标签页上限 10 秒，页面导航 35 秒，单条详情 75 秒，视频 OCR 60 秒，关闭临时页面 5 秒。
+抓取阶段进一步显示 `connecting`、`opening_page`、`opening_home`、`locating_profile`、`opening_profile`、`opening_favorites`、`locating_items`、`reading_item`、`opening_detail`、`video_ocr`。后台每 2 秒更新心跳，步骤变化更新 `last_progress_at`；同一步超过 45 秒时前端提示正在等待超时。CDP/新标签页上限 10 秒，页面导航优先等待 `domcontentloaded` 35 秒；如果页面 URL 已到小红书域名但加载事件迟迟不返回，则继续后续 DOM 操作，必要时再使用 `commit` 等待最多 65 秒。单条详情 75 秒，视频 OCR 60 秒。CDP 模式优先复用已打开的收藏页或小红书页，不再每次强制新开空白页；失败时保留页面用于排查。
 
 取消为协作式：接口立即设置取消信号，浏览器操作会在当前受限等待结束后检查信号，关闭 MemFlow 创建的临时标签，并进入 `cancelled`。不会强制关闭用户的 Chrome 或原有标签页。
 

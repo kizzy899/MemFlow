@@ -42,6 +42,41 @@ def test_open_favorites_distinguishes_logged_in_but_missing_favorites():
     with pytest.raises(XiaohongshuFavoritesError, match="已进入个人主页"):
         asyncio.run(s._open_favorites(page))
 
+
+def test_select_existing_xhs_page_prefers_favorites_tab():
+    s = service()
+    fav = MagicMock(url="https://www.xiaohongshu.com/user/profile/abc?tab=fav&subTab=note")
+    explore = MagicMock(url="https://www.xiaohongshu.com/explore")
+    blank = MagicMock(url="about:blank")
+    for page in (fav, explore, blank):
+        page.is_closed.return_value = False
+
+    assert s._select_existing_xhs_page([blank, explore, fav]) is fav
+    assert s._select_existing_xhs_page([blank, explore]) is explore
+
+
+def test_goto_lenient_continues_when_xhs_url_is_reached_after_timeout():
+    s = service()
+    page = MagicMock()
+    page.url = "https://www.xiaohongshu.com/explore"
+    page.goto = AsyncMock(side_effect=TimeoutError("slow domcontentloaded"))
+
+    asyncio.run(s._goto_lenient(page, "https://www.xiaohongshu.com/explore"))
+
+    page.goto.assert_awaited_once()
+
+
+def test_open_favorites_reuses_profile_page_without_home_lookup():
+    s, page, tab = service(), MagicMock(), MagicMock()
+    page.url = "https://www.xiaohongshu.com/user/profile/abc?tab=fav&subTab=note"
+    page.get_by_text.return_value = MagicMock(first=tab)
+    page.locator.return_value.filter.side_effect = AssertionError("should not locate home profile link")
+    tab.wait_for, tab.click = AsyncMock(), AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    asyncio.run(s._open_favorites(page))
+
+    tab.click.assert_awaited_once()
 def test_windows_fetch_runs_browser_on_worker_thread(monkeypatch):
     s = XiaohongshuService(Settings(_env_file=None))
     expected = [object()]

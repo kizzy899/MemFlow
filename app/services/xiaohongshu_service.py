@@ -55,7 +55,9 @@ class XiaohongshuService:
 
         async with async_playwright() as playwright:
             owned_page = None
+            cdp_mode = False
             if self.login_service.cdp_connected:
+                cdp_mode = True
                 check_cancelled(); report("connecting", "正在连接 Chrome 远程调试端口")
                 cdp_browser = await asyncio.wait_for(
                     playwright.chromium.connect_over_cdp(await self.login_service.resolve_cdp_endpoint(), timeout=8000), timeout=10
@@ -63,18 +65,24 @@ class XiaohongshuService:
                 if not cdp_browser.contexts:
                     raise XiaohongshuLoginError("Chrome CDP 没有可用的浏览器上下文。")
                 context = cdp_browser.contexts[0]
-                check_cancelled(); report("opening_page", "正在创建小红书读取标签页")
-                page = owned_page = await asyncio.wait_for(context.new_page(), timeout=10)
+                page = self._select_existing_xhs_page(context.pages)
+                if page:
+                    check_cancelled(); report("opening_page", "正在复用已打开的小红书页面", page_url=page.url)
+                else:
+                    check_cancelled(); report("opening_page", "正在创建小红书读取标签页")
+                    page = owned_page = await asyncio.wait_for(context.new_page(), timeout=10)
             else:
                 check_cancelled(); report("opening_browser", "正在启动本地浏览器会话")
                 context = await self._create_context(playwright)
                 page = await context.new_page() if not context.pages else context.pages[0]
             try:
-                check_cancelled(); report("opening_home", "正在打开小红书首页", page_url=self.HOME_URL)
-                await asyncio.wait_for(page.goto(self.HOME_URL, wait_until="domcontentloaded", timeout=30000), timeout=35)
+                if not self._is_xhs_page(page.url):
+                    check_cancelled(); report("opening_home", "正在打开小红书首页", page_url=self.HOME_URL)
+                    await self._goto_lenient(page, self.HOME_URL)
                 if "login" in page.url.lower():
                     raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
-                await self._open_favorites(page, report, check_cancelled)
+                if not self._is_favorites_page(page.url):
+                    await self._open_favorites(page, report, check_cancelled)
                 items = await self._extract_items(page, limit, report, check_cancelled, cancel_event or threading.Event())
                 if not items:
                     raise XiaohongshuFavoritesError("已进入个人收藏页，但没有识别到收藏内容；可能收藏为空或页面结构已变化。")
@@ -82,12 +90,12 @@ class XiaohongshuService:
             except TimeoutError as exc:
                 raise XiaohongshuFavoritesError("小红书页面操作超时，请检查 Chrome 页面、网络或风控提示后重试。") from exc
             finally:
-                if owned_page:
+                if owned_page and not cdp_mode:
                     try:
                         await asyncio.wait_for(owned_page.close(), timeout=5)
                     except Exception:
                         pass
-                else:
+                elif not cdp_mode:
                     try:
                         await asyncio.wait_for(context.close(), timeout=5)
                     except Exception:
@@ -97,23 +105,54 @@ class XiaohongshuService:
         browser = await playwright.chromium.launch(headless=True)
         return await browser.new_context(storage_state=self.login_service.session.storage_state)
 
+    def _select_existing_xhs_page(self, pages: list[Page]) -> Page | None:
+        live_pages = [page for page in pages if not page.is_closed()]
+        for page in live_pages:
+            if self._is_favorites_page(page.url):
+                return page
+        for page in live_pages:
+            if self._is_xhs_page(page.url):
+                return page
+        return None
+
+    @staticmethod
+    def _is_xhs_page(url: str) -> bool:
+        return "xiaohongshu.com" in (url or "").lower()
+
+    @staticmethod
+    def _is_favorites_page(url: str) -> bool:
+        value = (url or "").lower()
+        return "xiaohongshu.com/user/profile/" in value and ("tab=fav" in value or "subtab=note" in value)
+
+    async def _goto_lenient(self, page: Page, url: str) -> None:
+        try:
+            await asyncio.wait_for(page.goto(url, wait_until="domcontentloaded", timeout=30000), timeout=35)
+            return
+        except Exception:
+            if self._is_xhs_page(page.url):
+                return
+        response = await asyncio.wait_for(page.goto(url, wait_until="commit", timeout=60000), timeout=65)
+        if response is None and not self._is_xhs_page(page.url):
+            raise XiaohongshuFavoritesError("小红书页面导航失败，请检查网络或风控提示后重试。")
+
     async def _open_favorites(self, page: Page, report=None, check_cancelled=None) -> None:
         report = report or (lambda *args, **kwargs: None)
         check_cancelled = check_cancelled or (lambda: None)
-        check_cancelled(); report("locating_profile", "正在查找当前账号个人主页", page_url=page.url)
-        me_link = page.locator("a[href^='/user/profile/']").filter(has_text="我").first
-        try:
-            await me_link.wait_for(state="visible", timeout=10000)
-            profile_href = await me_link.get_attribute("href")
-        except Exception as exc:
-            raise XiaohongshuLoginError("未找到当前账号的个人主页入口，请确认登录态有效。") from exc
-        profile_url = self._normalize_profile_url(profile_href)
-        if not profile_url:
-            raise XiaohongshuLoginError("当前账号的个人主页入口无效。")
-        check_cancelled(); report("opening_profile", "正在进入个人主页", page_url=profile_url)
-        await asyncio.wait_for(page.goto(profile_url, wait_until="domcontentloaded", timeout=30000), timeout=35)
-        if "login" in page.url.lower():
-            raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
+        if "/user/profile/" not in (page.url or ""):
+            check_cancelled(); report("locating_profile", "正在查找当前账号个人主页", page_url=page.url)
+            me_link = page.locator("a[href^='/user/profile/']").filter(has_text="我").first
+            try:
+                await me_link.wait_for(state="visible", timeout=10000)
+                profile_href = await me_link.get_attribute("href")
+            except Exception as exc:
+                raise XiaohongshuLoginError("未找到当前账号的个人主页入口，请确认登录态有效。") from exc
+            profile_url = self._normalize_profile_url(profile_href)
+            if not profile_url:
+                raise XiaohongshuLoginError("当前账号的个人主页入口无效。")
+            check_cancelled(); report("opening_profile", "正在进入个人主页", page_url=profile_url)
+            await self._goto_lenient(page, profile_url)
+            if "login" in page.url.lower():
+                raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
         favorites_tab = page.get_by_text("收藏", exact=True).first
         try:
             check_cancelled(); report("opening_favorites", "正在打开收藏标签", page_url=page.url)

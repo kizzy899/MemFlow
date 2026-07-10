@@ -456,3 +456,14 @@
 状态与失败行为：视频处理状态复用 `media_fetch_status`、`ocr_status`、`transcription_status`、`content_completeness`、`media_error_message`，单步失败写入 unavailable 警告并继续后续步骤。Whisper 失败继续 OCR/Vision；OCR 失败继续字幕/Vision；Vision 失败或未启用继续字幕/OCR；最终 summary 会注明不可用能力。
 
 验证结果：新增专项测试覆盖视频 URL 分流和 SQLite 字段迁移；`python -m compileall app tests` 通过；`.\.venv\Scripts\python.exe -m pytest` 完整后端 114 passed；`git diff --check` 通过，仅有 Git CRLF 提示。pytest 仍提示受控环境无权写入 `.pytest_cache`，不影响测试执行。
+## 小红书 CDP 页面复用与启动校验修复（2026-07-11）
+
+实施顺序：先复现并确认 9223 可用但收藏任务失败在 `opening_home`，同时日志出现 `Target page, context or browser has been closed`；随后调整 CDP 收藏读取策略，优先复用已打开的收藏页或小红书页，只有找不到时才创建临时页；再将小红书导航改为宽松等待，`domcontentloaded` 超时但 URL 已到小红书域名时继续 DOM 操作，必要时降级到 `commit`；最后强化 Chrome CDP 启动脚本，必须验证 `/json/version` 返回 `webSocketDebuggerUrl` 才算成功。
+
+关键决策：不再把“端口监听”视为 CDP 可用；端口被非 CDP 进程占用时直接失败。CDP 模式下不自动关闭可见标签页，避免任务失败时把用户看到的调试窗口或最后一个标签页关掉。已在个人主页或收藏页时不再强制回首页查找“我”，减少小红书首页加载、风控和网络抖动带来的失败面。
+
+变更文件：`app/services/xiaohongshu_service.py`、`scripts/start_chrome_cdp.ps1`、`tests/test_xiaohongshu_service.py`、`docs/11-project-startup.md`、`docs/20-chrome-cdp-auth-flow.md`、`docs/23-xhs-sync-jobs-notion-stability.md`、`docs/00-implementation-log.md`。
+
+公共 API、数据库字段和 Notion schema 不变。任务状态仍使用既有 `opening_page`、`opening_home`、`opening_profile`、`opening_favorites` 等步骤；`opening_page` 现在可能表示复用已有页面。失败行为变为保留 CDP 页面现场，便于用户看到页面是否登录、风控或卡住。
+
+验证结果：`python -m compileall app tests` 通过；定向小红书/CDP 测试 21 passed；`.\.venv\Scripts\python.exe -m pytest tests` 完整后端 117 passed；`git diff --check` 通过，仅有 Git CRLF 提示；`scripts/start_chrome_cdp.ps1 -Port 9223` 返回 CDP ready；提升权限启动的 `8004` 实例 `/health` 通过，`POST /api/xhs/login/chrome` 返回 authenticated。pytest 仍提示受控环境无权写入 `.pytest_cache`，不影响测试执行。
