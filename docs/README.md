@@ -12,7 +12,7 @@
 - [URL 与文本去重](08-deduplication.md)
 - [Notion 配置验证与连接降级](09-notion-validation.md)
 - [测试与验收](10-testing-and-verification.md)
-- [项目启动脚本](11-project-startup.md)
+- [项目启动脚本与 Chrome CDP 自动启动](11-project-startup.md)
 - [简短标题生成](12-concise-title-generation.md)
 - [标签体系标准化](13-taxonomy-standardization.md)
 - [Notion 页面正文排版](14-notion-page-layout.md)
@@ -32,3 +32,4 @@
 - [Agent Search 视频文字与资源链接提取](22-agent-search-skill.md)
 - [小红书后台同步与 Notion 连接稳定性](23-xhs-sync-jobs-notion-stability.md)
 - [小红书视频完整内容流水线](24-xhs-video-content-pipeline.md)
+- [通用视频知识提取流水线](25-video-knowledge-extraction.md)

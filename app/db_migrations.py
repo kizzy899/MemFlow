@@ -28,6 +28,14 @@ SQLITE_COLUMNS = {
     "transcription_status": "VARCHAR(20) NOT NULL DEFAULT 'skipped'",
     "content_completeness": "VARCHAR(20) NOT NULL DEFAULT 'unknown'",
     "media_error_message": "TEXT NOT NULL DEFAULT ''",
+    "subtitle_path": "VARCHAR(1024) NOT NULL DEFAULT ''",
+    "ocr_path": "VARCHAR(1024) NOT NULL DEFAULT ''",
+    "timeline_path": "VARCHAR(1024) NOT NULL DEFAULT ''",
+    "summary_path": "VARCHAR(1024) NOT NULL DEFAULT ''",
+    "video_duration": "FLOAT NOT NULL DEFAULT 0",
+    "video_platform": "VARCHAR(50) NOT NULL DEFAULT ''",
+    "has_video": "BOOLEAN NOT NULL DEFAULT 0",
+    "has_subtitle": "BOOLEAN NOT NULL DEFAULT 0",
 }
 
 

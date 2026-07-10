@@ -18,7 +18,9 @@ def utcnow() -> datetime:
 
 class SourcePlatform(str, Enum):
     XIAOHONGSHU = "xiaohongshu"
+    DOUYIN = "douyin"
     BILIBILI = "bilibili"
+    YOUTUBE = "youtube"
     WECHAT = "wechat"
     ZHIHU = "zhihu"
     GITHUB = "github"
@@ -122,6 +124,14 @@ class ContentItem(Base):
     transcription_status: Mapped[str] = mapped_column(String(20), default="skipped")
     content_completeness: Mapped[str] = mapped_column(String(20), default="unknown")
     media_error_message: Mapped[str] = mapped_column(Text, default="")
+    subtitle_path: Mapped[str] = mapped_column(String(1024), default="")
+    ocr_path: Mapped[str] = mapped_column(String(1024), default="")
+    timeline_path: Mapped[str] = mapped_column(String(1024), default="")
+    summary_path: Mapped[str] = mapped_column(String(1024), default="")
+    video_duration: Mapped[float] = mapped_column(default=0.0)
+    video_platform: Mapped[str] = mapped_column(String(50), default="")
+    has_video: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_subtitle: Mapped[bool] = mapped_column(Boolean, default=False)
     importance: Mapped[Importance] = mapped_column(SqlEnum(Importance), default=Importance.MEDIUM)
     original_language: Mapped[str] = mapped_column(String(50), default="zh-CN")
     is_translated: Mapped[bool] = mapped_column(Boolean, default=False)

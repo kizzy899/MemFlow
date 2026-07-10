@@ -438,3 +438,21 @@
 失败行为：不合法 URL、路径逃逸、下载失败/超时、OpenCLI 缺失/CDP/认证/空结果、超长视频及取消均有稳定错误；失败不伪造内容，正文可按 `partial` 继续整理；错误、API 和 DOM 不含 Cookie、查询参数或本地媒体路径。Notion 重处理只替换顶层同名视频 Toggle。
 
 验证结果：faster-whisper 依赖在 Python 3.13 使用兼容 wheel 安装成功；后端完整回归 112 passed，前端 Vitest 9 passed，Vite production build 通过（194 modules），compileall、37 条 OpenAPI 路由检查、旧认证变量扫描和 `git diff --check` 通过。pytest 仅提示受控环境无权写入 `.pytest_cache`。真实 PoC 可连接 CDP 9223，但首条收藏详情返回小红书 `300031`，OpenCLI 未取得可验证媒体，故真实媒体闸门记录为 No-Go；未下载 Whisper 模型或宣称真实转录成功。
+## 2026-07-10：启动脚本自动拉起 Chrome CDP
+实施顺序：检查 `scripts/start_chrome_cdp.ps1` 的幂等行为与端口参数；在 `start.ps1` 环境检查通过且非 `-Check` 模式时先调用该脚本；补充启动脚本文档、文档索引与根 README。
+关键决策：默认复用 CDP 9223，新增 `ChromeCdpPort` 参数用于和 `CHROME_CDP_URL` 保持一致；`-Check` 不启动 Chrome，仍只验证虚拟环境与 `uvicorn`；CDP 脚本缺失、Chrome 不存在或启动失败时后端不继续启动，避免控制台显示可用但小红书连接实际不可用。
+变更文件：`start.ps1`、`README.md`、`docs/11-project-startup.md`、`docs/README.md`、`docs/00-implementation-log.md`。
+公共 API、持久化字段与业务状态流转不变；启动流程新增本地 Chrome CDP 前置步骤，状态仍由既有 CDP 认证与小红书同步接口管理。验证结果：`powershell -ExecutionPolicy Bypass -File .\start.ps1 -Check` 通过；`git diff --check` 通过。
+## 通用视频知识提取流水线（2026-07-10）
+
+实施顺序：先复查现有网页整理、小红书媒体补全、Notion 写入和 SQLite 迁移边界；随后新增 `app/video/` 分层模块，分别实现下载、metadata、音频抽取、Whisper 字幕、抽帧、OCR、Vision、timeline 和 summary；再把视频 URL 分流接入 `ContentPipelineService`，补充 ContentItem 视频产物字段、SQLite 迁移、Notion 可选字段和页面 Toggle；最后新增专项测试与模块文档。
+
+关键决策：通用视频流水线独立于既有小红书收藏同步，避免改变收藏批处理 Provider 链；AI 总结只读取 `metadata.json`、`subtitle.json`、`ocr.json` 和 `timeline.json`，不重新分析原始视频。Vision 默认关闭，使用 OpenAI 兼容接口作为首个可插拔实现；OCR 优先 PaddleOCR，缺失时降级 RapidOCR。缓存按 URL hash 复用结构化产物，并在 metadata 内记录真实 `video_hash` 供后续变化检测。
+
+变更文件：新增 `app/video/` 模块与 `tests/test_video_content_pipeline.py`；修改 `app/config.py`、`app/models/content_item.py`、`app/db_migrations.py`、`app/services/container.py`、`app/services/content_pipeline_service.py`、`app/services/notion_service.py`、`app/services/notion_page_service.py`、`.gitignore`、`docs/25-video-knowledge-extraction.md`、`docs/README.md` 和本日志。
+
+公共 API：未新增 HTTP 路由；现有 URL 收集入口自动识别小红书、抖音、B站和 YouTube 视频。新增配置项 `VIDEO_DOWNLOAD_TIMEOUT_SECONDS`、`VIDEO_FRAME_INTERVAL_SECONDS`、`VIDEO_VISION_ENABLED`、`VIDEO_VISION_MODEL`、`VIDEO_VISION_SAMPLE_EVERY`、`VIDEO_SUMMARY_TIMELINE_LIMIT`。新增持久化字段 `subtitle_path`、`ocr_path`、`timeline_path`、`summary_path`、`video_duration`、`video_platform`、`has_video`、`has_subtitle`。Notion 可选字段新增同名路径/状态字段以及 `AI Summary`、`Timeline`、`Commands`、`Tools`。
+
+状态与失败行为：视频处理状态复用 `media_fetch_status`、`ocr_status`、`transcription_status`、`content_completeness`、`media_error_message`，单步失败写入 unavailable 警告并继续后续步骤。Whisper 失败继续 OCR/Vision；OCR 失败继续字幕/Vision；Vision 失败或未启用继续字幕/OCR；最终 summary 会注明不可用能力。
+
+验证结果：新增专项测试覆盖视频 URL 分流和 SQLite 字段迁移；`python -m compileall app tests` 通过；`.\.venv\Scripts\python.exe -m pytest` 完整后端 114 passed；`git diff --check` 通过，仅有 Git CRLF 提示。pytest 仍提示受控环境无权写入 `.pytest_cache`，不影响测试执行。

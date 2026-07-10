@@ -167,7 +167,7 @@ cd ..
 .\start.ps1
 ```
 
-浏览器打开 `http://127.0.0.1:8000/console`。开发模式可在另一个终端运行 `cd frontend && npm run dev`，访问 `http://127.0.0.1:5173/console/`。
+`start.ps1` 会先自动启动或复用本机 `127.0.0.1:9223` 的专用 Chrome CDP，再启动 MemFlow。浏览器打开 `http://127.0.0.1:8000/console`。开发模式可在另一个终端运行 `cd frontend && npm run dev`，访问 `http://127.0.0.1:5173/console/`。
 
 控制台提供连接现有 Chrome 的小红书授权、账号管理、收藏与历史视频重处理、Notion 配置、inbox 队列、后台整理进度、最近 Notion 结果和 hot.md。小红书浏览器状态使用 `MEMFLOW_AUTH_KEY` 加密保存在本机，前端不接触 Cookie；CDP 默认只连接 `127.0.0.1:9223`，配置和控制 API 仅允许本机访问。
 

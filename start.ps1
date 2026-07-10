@@ -5,6 +5,9 @@ param(
     [ValidateRange(1, 65535)]
     [int]$Port = 8000,
 
+    [ValidateRange(1024, 65535)]
+    [int]$ChromeCdpPort = 9223,
+
     [switch]$NoReload,
 
     [switch]$Check
@@ -33,6 +36,14 @@ try {
         Write-Host "MemFlow startup check passed."
         return
     }
+
+    $chromeCdpScript = Join-Path $projectRoot "scripts\start_chrome_cdp.ps1"
+    if (-not (Test-Path -LiteralPath $chromeCdpScript -PathType Leaf)) {
+        throw "Chrome CDP startup script not found at $chromeCdpScript."
+    }
+
+    Write-Host "Starting Chrome CDP at http://127.0.0.1:$ChromeCdpPort"
+    & $chromeCdpScript -Port $ChromeCdpPort
 
     $uvicornArgs = @(
         "-m", "uvicorn",

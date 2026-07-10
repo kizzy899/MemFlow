@@ -24,6 +24,7 @@ from app.services.xiaohongshu_service import XiaohongshuService
 from app.services.xhs_login_service import XiaohongshuLoginService
 from app.services.xhs_sync_manager import XiaohongshuSyncManager
 from app.services.xhs_media_service import XhsMediaPipeline
+from app.video import VideoPipeline
 
 
 class ServiceContainer:
@@ -63,8 +64,9 @@ class ServiceContainer:
         self.translation_service = TranslationService(self.web_parser_service, self.file_storage_service)
         self.xhs_login_service = XiaohongshuLoginService(self.root, settings.memflow_auth_key, settings.chrome_cdp_url)
         self.xhs_media_pipeline = XhsMediaPipeline(settings, self.agent_search_service)
+        self.video_pipeline = VideoPipeline(settings)
         self.xiaohongshu_service = XiaohongshuService(settings, self.xhs_login_service, self.agent_search_service, self.xhs_media_pipeline)
-        self.content_pipeline_service = ContentPipelineService(self.web_parser_service, self.ai_service, self.item_service)
+        self.content_pipeline_service = ContentPipelineService(self.web_parser_service, self.ai_service, self.item_service, self.video_pipeline)
         self.link_reader_service = LinkReaderService(settings, self.web_parser_service)
         self.link_archive_ai_service = LinkArchiveAIService(settings)
         self.link_archive_service = LinkArchiveService(self.root, self.link_reader_service, self.ai_service, self.link_archive_ai_service, self.item_service, self.notion_service)

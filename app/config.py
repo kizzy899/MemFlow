@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     whisper_compute_type: str = Field(default="int8", alias="WHISPER_COMPUTE_TYPE")
     video_step_timeout_seconds: int = Field(default=180, alias="VIDEO_STEP_TIMEOUT_SECONDS")
     video_max_duration_seconds: int = Field(default=1800, alias="VIDEO_MAX_DURATION_SECONDS")
+    video_download_timeout_seconds: int = Field(default=600, alias="VIDEO_DOWNLOAD_TIMEOUT_SECONDS")
+    video_frame_interval_seconds: float = Field(default=1.0, alias="VIDEO_FRAME_INTERVAL_SECONDS")
+    video_vision_enabled: bool = Field(default=False, alias="VIDEO_VISION_ENABLED")
+    video_vision_model: str = Field(default="gpt-4.1-mini", alias="VIDEO_VISION_MODEL")
+    video_vision_sample_every: int = Field(default=1, alias="VIDEO_VISION_SAMPLE_EVERY")
+    video_summary_timeline_limit: int = Field(default=800, alias="VIDEO_SUMMARY_TIMELINE_LIMIT")
 
     translation_output_dir: str = Field(default="files/translated", alias="TRANSLATION_OUTPUT_DIR")
     raw_output_dir: str = Field(default="files/raw", alias="RAW_OUTPUT_DIR")
@@ -57,6 +63,14 @@ class Settings(BaseSettings):
     @property
     def whisper_model_path(self) -> Path:
         return (self.base_dir / "data" / "models" / "whisper").resolve()
+
+    @property
+    def video_output_path(self) -> Path:
+        return (self.base_dir / "data" / "video").resolve()
+
+    @property
+    def video_cache_path(self) -> Path:
+        return (self.base_dir / "cache" / "video").resolve()
 
     @property
     def sqlite_file_path(self) -> Optional[Path]:

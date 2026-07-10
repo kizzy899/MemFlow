@@ -25,10 +25,11 @@ from app.services.taxonomy_service import normalize_category_level_1, normalize_
 
 
 class ContentPipelineService:
-    def __init__(self, web_parser_service: WebParserService, ai_service: AIService, item_service: ItemService) -> None:
+    def __init__(self, web_parser_service: WebParserService, ai_service: AIService, item_service: ItemService, video_pipeline=None) -> None:
         self.web_parser_service = web_parser_service
         self.ai_service = ai_service
         self.item_service = item_service
+        self.video_pipeline = video_pipeline
 
     def process_collect(self, db: Session, input_type: str, content: str) -> ContentItem:
         if input_type == "url":
@@ -59,6 +60,9 @@ class ContentPipelineService:
         )
         self.item_service.save(db, item)
 
+        if self.video_pipeline and self.video_pipeline.can_process(normalized_url):
+            return self._process_video_url(db, item)
+
         try:
             parsed = self.web_parser_service.parse_url(source_url)
             item.raw_text = parsed.content
@@ -80,6 +84,63 @@ class ContentPipelineService:
             analysis = self.ai_service.analyze(parsed.source_url, parsed.title, parsed.content)
             self._apply_analysis(item, analysis)
             item.raw_excerpt = analysis.summary[:200]
+            item.ai_status = StageStatus.SUCCESS
+            item.process_status = ProcessStatus.COMPLETED
+            item.error_message = ""
+        except Exception as exc:
+            item.ai_status = StageStatus.FAILED
+            item.process_status = ProcessStatus.FAILED
+            item.error_message = str(exc)
+            self.item_service.save(db, item)
+            raise
+
+        self.item_service.save(db, item)
+        return self.item_service.attempt_notion_sync(db, item)
+
+    def _process_video_url(self, db: Session, item: ContentItem) -> ContentItem:
+        item.content_type = ContentType.VIDEO
+        item.source_type = "video_pipeline"
+        item.media_fetch_status = "processing"
+        self.item_service.save(db, item)
+        try:
+            result = self.video_pipeline.process(item.source_url or item.normalized_url or "")
+            metadata = result.metadata
+            item.title = str(metadata.get("title") or item.title or "未命名视频")
+            item.author = str(metadata.get("author") or "")
+            item.site_name = str(metadata.get("platform") or "")
+            item.raw_text = result.summary_markdown
+            item.clean_content = result.ai_text
+            item.raw_excerpt = result.summary_markdown[:200]
+            item.archive_markdown = result.summary_markdown
+            item.subtitle_path = str(result.subtitle_path)
+            item.ocr_path = str(result.ocr_path)
+            item.timeline_path = str(result.timeline_path)
+            item.summary_path = str(result.summary_path)
+            item.video_duration = float(metadata.get("duration") or 0)
+            item.video_platform = str(metadata.get("platform") or "")
+            item.has_video = bool(result.video_path)
+            item.has_subtitle = result.statuses.get("whisper") == "success"
+            item.media_provider = "yt-dlp"
+            item.media_fetch_status = result.statuses.get("download", "failed")
+            item.ocr_status = result.statuses.get("ocr", "skipped")
+            item.transcription_status = result.statuses.get("whisper", "skipped")
+            item.content_completeness = "complete" if item.has_subtitle and item.ocr_status in {"success", "empty"} else "partial"
+            item.media_error_message = "；".join(result.warnings)
+            item.fetch_status = StageStatus.SUCCESS
+            self.item_service.save(db, item)
+        except Exception as exc:
+            item.fetch_status = StageStatus.FAILED
+            item.media_fetch_status = "failed"
+            item.content_completeness = "partial"
+            item.media_error_message = str(exc)
+            item.raw_text = f"视频结构化处理失败：{exc}"
+            item.clean_content = item.raw_text
+            self.item_service.save(db, item)
+
+        try:
+            analysis = self.ai_service.analyze(item.source_url or "", item.title, item.clean_content or item.raw_text)
+            self._apply_analysis(item, analysis)
+            item.content_type = ContentType.VIDEO
             item.ai_status = StageStatus.SUCCESS
             item.process_status = ProcessStatus.COMPLETED
             item.error_message = ""
@@ -232,8 +293,12 @@ class ContentPipelineService:
         host = (urlsplit(url).hostname or "").lower()
         if host == "mp.weixin.qq.com":
             return SourcePlatform.WECHAT
+        if host.endswith("douyin.com"):
+            return SourcePlatform.DOUYIN
         if host.endswith("bilibili.com") or host == "b23.tv":
             return SourcePlatform.BILIBILI
+        if host.endswith("youtube.com") or host == "youtu.be":
+            return SourcePlatform.YOUTUBE
         if host.endswith("xiaohongshu.com") or host.endswith("xhslink.com"):
             return SourcePlatform.XIAOHONGSHU
         if host.endswith("zhihu.com"):

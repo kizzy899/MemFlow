@@ -35,9 +35,21 @@ class NotionService:
     OPTIONAL_PROPERTIES = {
         "原文语言": "select",
         "是否翻译": "checkbox",
+        "subtitle_path": "rich_text",
+        "ocr_path": "rich_text",
+        "timeline_path": "rich_text",
+        "summary_path": "rich_text",
+        "video_duration": "number",
+        "video_platform": "select",
+        "has_video": "checkbox",
+        "has_subtitle": "checkbox",
+        "AI Summary": "rich_text",
+        "Timeline": "rich_text",
+        "Commands": "rich_text",
+        "Tools": "multi_select",
     }
     PLATFORM_NAMES = {
-        "web": "Web", "manual": "手动输入", "wechat": "微信公众号", "bilibili": "B站",
+        "web": "Web", "manual": "手动输入", "wechat": "微信公众号", "douyin": "抖音", "bilibili": "B站", "youtube": "YouTube",
         "xiaohongshu": "小红书", "zhihu": "知乎", "github": "GitHub", "paper": "论文",
         "translation": "翻译",
     }
@@ -317,7 +329,68 @@ class NotionService:
             properties["原文语言"] = {"select": {"name": item.original_language or "未知"}}
         if "是否翻译" in existing_properties:
             properties["是否翻译"] = {"checkbox": bool(item.is_translated)}
+        if "subtitle_path" in existing_properties:
+            properties["subtitle_path"] = {"rich_text": self._rich_text(item.subtitle_path)}
+        if "ocr_path" in existing_properties:
+            properties["ocr_path"] = {"rich_text": self._rich_text(item.ocr_path)}
+        if "timeline_path" in existing_properties:
+            properties["timeline_path"] = {"rich_text": self._rich_text(item.timeline_path)}
+        if "summary_path" in existing_properties:
+            properties["summary_path"] = {"rich_text": self._rich_text(item.summary_path)}
+        if "video_duration" in existing_properties:
+            properties["video_duration"] = {"number": float(item.video_duration or 0)}
+        if "video_platform" in existing_properties:
+            properties["video_platform"] = {"select": {"name": item.video_platform or platform_value or "unknown"}}
+        if "has_video" in existing_properties:
+            properties["has_video"] = {"checkbox": bool(item.has_video)}
+        if "has_subtitle" in existing_properties:
+            properties["has_subtitle"] = {"checkbox": bool(item.has_subtitle)}
+        if "AI Summary" in existing_properties:
+            properties["AI Summary"] = {"rich_text": self._rich_text(item.summary or item.raw_excerpt)}
+        if "Timeline" in existing_properties:
+            properties["Timeline"] = {"rich_text": self._rich_text(self._file_excerpt(item.timeline_path))}
+        if "Commands" in existing_properties:
+            properties["Commands"] = {"rich_text": self._rich_text(self._extract_summary_section(item.archive_markdown, "命令"))}
+        if "Tools" in existing_properties:
+            tools = self._extract_tools(item.archive_markdown)
+            properties["Tools"] = {"multi_select": [{"name": tool[:100]} for tool in tools]}
         return properties
+
+    @staticmethod
+    def _file_excerpt(path: str) -> str:
+        if not path:
+            return ""
+        try:
+            from pathlib import Path
+
+            file_path = Path(path)
+            if not file_path.exists() or not file_path.is_file():
+                return ""
+            return file_path.read_text(encoding="utf-8")[:1900]
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _extract_summary_section(markdown: str, heading: str) -> str:
+        if not markdown:
+            return ""
+        marker = f"## {heading}"
+        start = markdown.find(marker)
+        if start < 0:
+            return ""
+        rest = markdown[start + len(marker):]
+        end = rest.find("\n## ")
+        return (rest[:end] if end >= 0 else rest).strip("\n -`")
+
+    @classmethod
+    def _extract_tools(cls, markdown: str) -> list[str]:
+        section = cls._extract_summary_section(markdown, "所有工具") or cls._extract_summary_section(markdown, "Tools")
+        tools = []
+        for line in section.splitlines():
+            value = line.strip(" -`\t")
+            if value and not value.startswith("未识别"):
+                tools.append(value[:100])
+        return list(dict.fromkeys(tools))[:20]
 
     @staticmethod
     def _rich_text(value: str) -> list[dict[str, Any]]:

@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 .pytest_cache/
 .venv/
 .env
@@ -13,8 +13,10 @@ data/cookies/
 data/chrome-cdp-profile/
 data/agent-search-tmp/
 data/xhs-media-tmp/
+data/video/
 data/models/
 data/agent-reach-diagnostics/
+cache/video/
 hot.md
 inbox/links.md
 inbox/.links.md.bak

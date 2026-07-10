@@ -52,5 +52,15 @@ def build_video_content_toggle(data: object) -> dict[str, Any] | None:
  statuses=(f"Provider: {_value(data,'media_provider','无')}；媒体: {_value(data,'media_fetch_status','skipped')}；"
            f"OCR: {_value(data,'ocr_status','skipped')}；语音: {_value(data,'transcription_status','skipped')}；"
            f"完整度: {_value(data,'content_completeness','unknown')}")
- children=[_text_block("paragraph",statuses),*[_text_block("paragraph",chunk) for chunk in chunks]]
+ paths=(f"subtitle_path: {_value(data,'subtitle_path','无')}；ocr_path: {_value(data,'ocr_path','无')}；"
+           f"timeline_path: {_value(data,'timeline_path','无')}；summary_path: {_value(data,'summary_path','无')}")
+ timeline=str(_value(data,"timeline_path","")).strip()
+ timeline_text=""
+ if timeline:
+  try:
+   from pathlib import Path
+   p=Path(timeline)
+   timeline_text=p.read_text(encoding="utf-8")[:1800] if p.exists() else ""
+  except Exception: timeline_text=""
+ children=[_text_block("heading_3","AI Summary"),_text_block("paragraph",_value(data,"summary","暂无摘要")),_text_block("heading_3","Timeline"),_text_block("paragraph",timeline_text or "暂无时间轴"),_text_block("paragraph",statuses),_text_block("paragraph",paths),*[_text_block("paragraph",chunk) for chunk in chunks]]
  return {"object":"block","type":"toggle","toggle":{"rich_text":[{"type":"text","text":{"content":"MemFlow 视频内容"}}],"children":children}}
