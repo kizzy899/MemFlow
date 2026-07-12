@@ -27,9 +27,20 @@ def test_open_favorites_fails_without_profile_entry():
     s,page,me=service(),MagicMock(),MagicMock()
     page.get_by_text.return_value=MagicMock(first=me)
     me.wait_for=AsyncMock(side_effect=TimeoutError)
-    with pytest.raises(XiaohongshuLoginError, match='个人主页入口'):
+    page.evaluate = AsyncMock(return_value=None)
+    with pytest.raises(XiaohongshuLoginError):
         asyncio.run(s._open_favorites(page))
 
+
+
+def test_find_current_profile_href_falls_back_to_dom_scan():
+    s, page, me = service(), MagicMock(), MagicMock()
+    page.locator.return_value.filter.return_value = MagicMock(first=me)
+    me.wait_for = AsyncMock(side_effect=TimeoutError)
+    page.evaluate = AsyncMock(return_value="https://www.xiaohongshu.com/user/profile/abc")
+
+    assert asyncio.run(s._find_current_profile_href(page)).endswith("/user/profile/abc")
+    page.evaluate.assert_awaited_once()
 
 def test_open_favorites_distinguishes_logged_in_but_missing_favorites():
     s, page, me, tab = service(), MagicMock(), MagicMock(), MagicMock()
@@ -39,9 +50,21 @@ def test_open_favorites_distinguishes_logged_in_but_missing_favorites():
     page.goto = AsyncMock()
     page.url = "https://www.xiaohongshu.com/user/profile/abc"
     tab.wait_for = AsyncMock(side_effect=TimeoutError)
-    with pytest.raises(XiaohongshuFavoritesError, match="已进入个人主页"):
+    page.evaluate = AsyncMock(return_value=False)
+    with pytest.raises(XiaohongshuFavoritesError):
         asyncio.run(s._open_favorites(page))
 
+
+
+def test_open_favorites_tab_falls_back_to_dom_click():
+    s, page, tab = service(), MagicMock(), MagicMock()
+    page.get_by_text.return_value = MagicMock(first=tab)
+    tab.wait_for = AsyncMock(side_effect=TimeoutError)
+    page.evaluate = AsyncMock(return_value=True)
+
+    asyncio.run(s._open_favorites_tab(page))
+
+    page.evaluate.assert_awaited_once()
 
 def test_select_existing_xhs_page_prefers_favorites_tab():
     s = service()

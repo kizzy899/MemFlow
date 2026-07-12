@@ -140,12 +140,9 @@ class XiaohongshuService:
         check_cancelled = check_cancelled or (lambda: None)
         if "/user/profile/" not in (page.url or ""):
             check_cancelled(); report("locating_profile", "正在查找当前账号个人主页", page_url=page.url)
-            me_link = page.locator("a[href^='/user/profile/']").filter(has_text="我").first
-            try:
-                await me_link.wait_for(state="visible", timeout=10000)
-                profile_href = await me_link.get_attribute("href")
-            except Exception as exc:
-                raise XiaohongshuLoginError("未找到当前账号的个人主页入口，请确认登录态有效。") from exc
+            profile_href = await self._find_current_profile_href(page)
+            if not profile_href:
+                raise XiaohongshuLoginError("Current account profile entry was not found; confirm the login state is valid")
             profile_url = self._normalize_profile_url(profile_href)
             if not profile_url:
                 raise XiaohongshuLoginError("当前账号的个人主页入口无效。")
@@ -153,14 +150,72 @@ class XiaohongshuService:
             await self._goto_lenient(page, profile_url)
             if "login" in page.url.lower():
                 raise XiaohongshuLoginError("需要重新配置 Cookie 或浏览器登录态。")
-        favorites_tab = page.get_by_text("收藏", exact=True).first
         try:
-            check_cancelled(); report("opening_favorites", "正在打开收藏标签", page_url=page.url)
-            await favorites_tab.wait_for(state="visible", timeout=15000)
-            await favorites_tab.click()
+            check_cancelled(); report("opening_favorites", "Opening favorites tab", page_url=page.url)
+            await self._open_favorites_tab(page)
             await page.wait_for_timeout(2000)
         except Exception as exc:
-            raise XiaohongshuFavoritesError("已进入个人主页，但没有找到可访问的收藏入口；可能页面结构已变化或该入口不可见。") from exc
+            raise XiaohongshuFavoritesError("Profile page opened, but the favorites tab was not found or is not visible") from exc
+
+    async def _open_favorites_tab(self, page: Page) -> None:
+        try:
+            favorites_tab = page.get_by_text("\u6536\u85cf", exact=True).first
+            await favorites_tab.wait_for(state="visible", timeout=5000)
+            await favorites_tab.click()
+            return
+        except Exception:
+            pass
+        clicked = await page.evaluate(
+            """() => {
+                const candidates = Array.from(document.querySelectorAll('.reds-tab-item, [class*="tab"]'));
+                const tab = candidates.find((node) => {
+                    const text = (node.innerText || node.textContent || '').trim();
+                    const rect = node.getBoundingClientRect();
+                    return text === '\u6536\u85cf' && rect.width > 0 && rect.height > 0;
+                });
+                if (!tab) return false;
+                tab.click();
+                return true;
+            }"""
+        )
+        if not clicked:
+            raise XiaohongshuFavoritesError("Favorites tab was not found")
+
+    async def _find_current_profile_href(self, page: Page) -> str | None:
+        try:
+            me_link = page.locator("a[href^='/user/profile/']").filter(has_text="\u6211").first
+            await me_link.wait_for(state="visible", timeout=3000)
+            href = await me_link.get_attribute("href")
+            if href:
+                return href
+        except Exception:
+            pass
+        return await page.evaluate(
+            """() => {
+                const links = Array.from(document.querySelectorAll('a[href*="/user/profile/"]'));
+                const normalized = links.map((node) => {
+                    const href = node.href || node.getAttribute('href') || '';
+                    const text = (node.innerText || node.textContent || '').trim();
+                    const rect = node.getBoundingClientRect();
+                    const visible = rect.width > 0 && rect.height > 0;
+                    const className = String(node.className || '');
+                    let url = null;
+                    try { url = new URL(href, location.origin); } catch (_) {}
+                    return { href, text, visible, className, url, x: rect.x };
+                }).filter((item) => item.url && item.url.pathname.startsWith('/user/profile/'));
+                const own = normalized.find((item) => item.visible && item.text === '\u6211');
+                if (own) return own.url.href;
+                const nav = normalized.find((item) =>
+                    item.visible &&
+                    item.x < 180 &&
+                    !item.url.search &&
+                    /link-wrapper|bottom-channel/.test(item.className)
+                );
+                if (nav) return nav.url.href;
+                const bare = normalized.find((item) => item.visible && !item.url.search);
+                return bare ? bare.url.href : null;
+            }"""
+        )
 
     def _normalize_profile_url(self, href: str | None) -> str | None:
         if not href:

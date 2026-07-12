@@ -2,6 +2,8 @@
 
 Every feature or module change must update the project documentation in the same change.
 
+Before executing repository operations, remind yourself that this project is developed in a Windows workspace. Prefer Windows-compatible commands, paths, shell behavior, and text encodings first, especially when reading or writing files.
+
 Required documentation work:
 
 1. Create or update the module document under `docs/`.
