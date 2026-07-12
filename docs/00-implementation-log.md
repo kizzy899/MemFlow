@@ -489,3 +489,13 @@
 公共 API、数据库字段和状态枚举不变。`POST /api/items/{item_id}/sync-notion` 与批量同步继续使用既有响应结构；archived 旧页重建成功后持久化新的 `notion_page_id`/`notion_page_url` 并进入 `synced`，重建失败仍进入 `failed` 并写入 `notion_error_message`。
 
 验证结果：`python -m compileall -q app tests` 通过；`pytest tests\test_notion_service.py tests\test_notion_retry_sync.py -q` 10 passed。pytest 仍提示受控环境无权写入 `.pytest_cache`，不影响测试执行。
+
+## Console hot.md 入口移动（2026-07-12）
+
+实施顺序：从 `main` 新建并切换到 `frontend-hot-entry-design` 分支；复查 Console 首页布局、`hot.md` 独立页面和前端测试；将首页左栏的“项目记忆”卡片移除，把 `打开 hot.md` 入口放到“待整理收件箱”卡片右上角操作区，位于待整理表单和队列内容上方；随后更新前端测试和 Knowledge Console 文档。
+
+关键决策：不改变 `/console/memory` 独立页面和 `GET /api/hot` 安全渲染路径，只移动首页入口位置；入口继续使用普通链接，不新增前端状态、后端 API 或持久化字段。
+
+变更文件：`frontend/src/App.tsx`、`frontend/src/App.test.tsx`、`docs/18-knowledge-console.md`、`docs/00-implementation-log.md`。`docs/README.md` 已索引 Knowledge Console 模块文档，无需新增索引项。
+
+公共 API、持久化字段、任务状态和失败行为不变。测试覆盖首页模块渲染，并验证 `打开 hot.md` 链接位于“待整理收件箱”卡片内。验证结果：`node node_modules\\vitest\\vitest.mjs run src\\App.test.tsx` 9 passed；`npm run build` 通过；`git diff --check` 通过。`npm test -- --run` 在本机命令形态下未退出并超时，已用 Vitest run 模式完成等价前端测试。

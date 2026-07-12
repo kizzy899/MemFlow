@@ -212,11 +212,10 @@ export default function App() {
           {config.notion.check.database_url && <a className="external-link" href={config.notion.check.database_url} target="_blank" rel="noreferrer">打开 Notion 数据库 ↗</a>}
         </Card>
 
-        <Card title="项目记忆"><p className="hint">在独立页面查看和刷新 hot.md。</p><a className="button secondary" href="/console/memory">打开 hot.md</a></Card>
       </div>
 
       <div className="work-column">
-        <Card title="待整理收件箱" action={<div className="head-actions"><Badge status="processing">{inbox.pending_item_count} 项 / {inbox.pending_url_count} 链接</Badge><button className="text-button" onClick={() => void loadInbox()}>刷新</button></div>}>
+        <Card title="待整理收件箱" action={<div className="head-actions"><a className="button secondary compact" href="/console/memory">打开 hot.md</a><Badge status="processing">{inbox.pending_item_count} 项 / {inbox.pending_url_count} 链接</Badge><button className="text-button" onClick={() => void loadInbox()}>刷新</button></div>}>
           <form onSubmit={appendInbox} className="form-stack"><label>粘贴文字或链接（一次粘贴的文字按一条处理）<textarea rows={6} value={queueText} onChange={e => setQueueText(e.target.value)} placeholder="多个链接可逐行粘贴，保存时会自动用空行分隔&#10;&#10;普通文字无论多少行，都作为一个整理单位" /></label><button className="button" disabled={!queueText.trim()}>加入待整理队列</button></form>
           <div className="selection-toolbar"><button className="button secondary compact" type="button" disabled={!inbox.items.length} onClick={toggleAll}>{selectedIds.size === inbox.items.length && inbox.items.length ? '取消全选' : '全选'}</button><span>已选择 {selectedIds.size} 条</span><button className="button danger-button compact" type="button" disabled={!selectedIds.size} onClick={() => void deleteSelected()}>删除选中</button></div>
           <div className="queue-list">{inbox.items.length === 0 ? <p className="empty">队列为空</p> : inbox.items.map(item => <article className={`queue-item ${selectedIds.has(item.item_id) ? 'selected' : ''}`} key={item.item_id}><label className="select-box"><input type="checkbox" aria-label={`选择 ${item.content.slice(0, 20)}`} checked={selectedIds.has(item.item_id)} onChange={() => toggleSelection(item.item_id)} /></label><div className="queue-content"><Badge status={item.status}>{item.status === 'failed' ? '处理失败' : '待处理'}</Badge><p>{item.content}</p>{item.failure_reason && <p className="error-text">{item.failure_reason}</p>}</div><button className="text-button danger" onClick={() => void deleteItem(item.item_id)}>删除</button></article>)}</div>
