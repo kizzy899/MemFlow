@@ -167,22 +167,39 @@ class NotionService:
         properties = self._build_properties(item)
         try:
             if item.notion_page_id:
-                page = client.pages.update(page_id=item.notion_page_id, properties=properties)
-                self._replace_video_content(client, item.notion_page_id, item)
-            else:
                 try:
-                    page = client.pages.create(
-                        parent={"database_id": self.settings.notion_database_id},
-                        properties=properties,
-                        children=build_notion_page_children(item),
-                    )
-                except Exception:
-                    page = client.pages.create(
-                        parent={"database_id": self.settings.notion_database_id}, properties=properties
-                    )
+                    page = client.pages.update(page_id=item.notion_page_id, properties=properties)
+                    self._replace_video_content(client, item.notion_page_id, item)
+                except Exception as exc:
+                    if not self._is_archived_page_error(exc):
+                        raise
+                    item.notion_page_id = ""
+                    item.notion_page_url = ""
+                    page = self._create_page(client, properties, item)
+            else:
+                page = self._create_page(client, properties, item)
             return str(page["id"]), str(page.get("url", item.notion_page_url or ""))
         except Exception as exc:
             raise NotionServiceError(self.humanize_error(exc)) from exc
+
+    def _create_page(self, client: Client, properties: dict[str, Any], item: ContentItem) -> dict[str, Any]:
+        try:
+            return client.pages.create(
+                parent={"database_id": self.settings.notion_database_id},
+                properties=properties,
+                children=build_notion_page_children(item),
+            )
+        except Exception:
+            return client.pages.create(
+                parent={"database_id": self.settings.notion_database_id}, properties=properties
+            )
+
+    @staticmethod
+    def _is_archived_page_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "archived" in message and (
+            "unarchive" in message or "can't edit block" in message or "page" in message or "block" in message
+        )
 
     def _replace_video_content(self, client: Client, page_id: str, item: ContentItem) -> None:
         toggle = build_video_content_toggle(item)

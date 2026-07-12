@@ -477,3 +477,15 @@
 ?????`app/services/xiaohongshu_service.py`?`tests/test_xiaohongshu_service.py`?`docs/17-xiaohongshu-favorites.md`?`docs/00-implementation-log.md`?`docs/README.md` ??????????????????????
 
 ?????`python -m compileall -q app tests` ???`pytest tests/test_xiaohongshu_service.py -q` ? 14 passed??? CDP `127.0.0.1:9223` ??????????????????????? `?tab=fav&subTab=note`?pytest ??? `.pytest_cache` ??? Windows ?????????????
+
+## Notion 归档旧页自动重建（2026-07-12）
+
+实施顺序：先复查小红书收藏任务状态、ContentPipeline 到 ItemService 的 Notion 同步链路，确认批次 success 只代表本地处理完成且 Notion 失败会落到条目级 `notion_sync_status`；随后在 `NotionService.upsert_page_details` 中识别 archived/unarchive/block/page 类旧页面错误，改为清空旧页面引用并创建新页面；最后补充 Notion 服务单元测试和模块文档。
+
+关键决策：只对 Notion 明确提示页面或 block 已归档且需要 unarchive 的错误触发重建；普通网络、权限、字段校验和其他写入失败仍保持失败，不自动创建重复页面。创建新页复用既有页面 children 构建逻辑；若带 children 创建失败，仍沿用原有无 children 创建兜底。
+
+变更文件：`app/services/notion_service.py`、`tests/test_notion_service.py`、`docs/05-notion-sync-retry.md`、`docs/00-implementation-log.md`。`docs/README.md` 已索引 Notion 手动同步重试文档，无需新增索引项。
+
+公共 API、数据库字段和状态枚举不变。`POST /api/items/{item_id}/sync-notion` 与批量同步继续使用既有响应结构；archived 旧页重建成功后持久化新的 `notion_page_id`/`notion_page_url` 并进入 `synced`，重建失败仍进入 `failed` 并写入 `notion_error_message`。
+
+验证结果：`python -m compileall -q app tests` 通过；`pytest tests\test_notion_service.py tests\test_notion_retry_sync.py -q` 10 passed。pytest 仍提示受控环境无权写入 `.pytest_cache`，不影响测试执行。
