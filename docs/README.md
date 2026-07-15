@@ -29,6 +29,7 @@
 - [小红书扫码认证中心](19-xiaohongshu-qr-auth.md)
 - [连接现有 Chrome 读取小红书收藏](20-chrome-cdp-auth-flow.md)
 - [小红书收藏读取操作流程](21-xhs-favorites-operations-runbook.md)
+- [Chrome CDP 启动与小红书 Cookie 探测修复流程](26-chrome-cdp-cookie-probe-runbook.md)
 - [Agent Search 视频文字与资源链接提取](22-agent-search-skill.md)
 - [小红书后台同步与 Notion 连接稳定性](23-xhs-sync-jobs-notion-stability.md)
 - [小红书视频完整内容流水线](24-xhs-video-content-pipeline.md)

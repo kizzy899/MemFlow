@@ -24,7 +24,7 @@ CDP 模式不自动关闭可见标签，失败时保留现场方便排查
 
 ## 启用与连接流程
 
-1. 在仓库根目录运行 `.\scripts\start_chrome_cdp.ps1`。脚本使用忽略提交的 `data/chrome-cdp-profile` 启动真实 Chrome，并将 CDP 限定到 `127.0.0.1:9223`。脚本会轮询 `http://127.0.0.1:9223/json/version`，只有拿到 `webSocketDebuggerUrl` 才算启动成功。
+1. 在仓库根目录运行 `.\scripts\start_chrome_cdp.ps1`。脚本使用忽略提交的 `data/chrome-cdp-profile` 启动真实 Chrome，并将 CDP 限定到 `127.0.0.1:9223`。脚本会轮询 `http://127.0.0.1:9223/json/version`，只有拿到 `webSocketDebuggerUrl` 才算 CDP 启动成功；随后还会连接小红书 page target 的 DevTools WebSocket，执行 `Network.getCookies` 验证小红书 Cookie 状态可读。
 2. 首次在该 Chrome 窗口登录小红书，手动确认个人主页的“收藏”页可访问；以后会复用该资料目录。
 3. 在 PowerShell 验证 `http://127.0.0.1:9223/json/version` 可以访问；如果使用其他端口，同时为脚本传入 `-Port` 并在 `.env` 设置 `CHROME_CDP_URL`。
 4. 重启 MemFlow，打开 `/console/login/xiaohongshu`，点击“连接当前 Chrome”。
@@ -32,7 +32,7 @@ CDP 模式不自动关闭可见标签，失败时保留现场方便排查
 
 账号管理页提供“本次读取数量”输入框，范围 1–100。点击“开始读取收藏”后，浏览器直接发送 `POST /api/xhs/sync`，请求体为 `{"limit": N}`；无需生成或执行 PowerShell 命令。页面在请求期间禁用按钮，并显示成功整理条数或后端错误。
 
-当前机器若未真正监听 9223，或 9223 被非 Chrome CDP 进程占用，脚本会直接报错，连接接口返回 `CDP_UNAVAILABLE`。现代 Chrome 可能拒绝为默认资料目录开启调试端口，因此项目脚本固定使用独立持久资料目录。Chrome 自身的 `chrome://inspect` 授权服务可能占用 9222，但它不一定提供 Playwright 所需的 `/json/version`，所以项目避开该端口。
+当前机器若未真正监听 9223，或 9223 被非 Chrome CDP 进程占用，脚本会直接报错，连接接口返回 `CDP_UNAVAILABLE`。若 Cookie 可读但没有 `a1` / `web_session`，脚本默认提示登录；使用 `-RequireXhsLogin` 时会失败退出。现代 Chrome 可能拒绝为默认资料目录开启调试端口，因此项目脚本固定使用独立持久资料目录。Chrome 自身的 `chrome://inspect` 授权服务可能占用 9222，但它不一定提供 Playwright 所需的 `/json/version`，所以项目避开该端口。
 
 ## API、状态与失败
 

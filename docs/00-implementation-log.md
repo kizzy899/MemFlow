@@ -499,3 +499,14 @@
 变更文件：`frontend/src/App.tsx`、`frontend/src/App.test.tsx`、`docs/18-knowledge-console.md`、`docs/00-implementation-log.md`。`docs/README.md` 已索引 Knowledge Console 模块文档，无需新增索引项。
 
 公共 API、持久化字段、任务状态和失败行为不变。测试覆盖首页模块渲染，并验证 `打开 hot.md` 链接位于“待整理收件箱”卡片内。验证结果：`node node_modules\\vitest\\vitest.mjs run src\\App.test.tsx` 9 passed；`npm run build` 通过；`git diff --check` 通过。`npm test -- --run` 在本机命令形态下未退出并超时，已用 Vitest run 模式完成等价前端测试。
+## 2026-07-15：Chrome CDP 启动脚本小红书 Cookie 探测
+
+实施顺序：先复查 Windows 启动入口、`scripts/start_chrome_cdp.ps1`、CDP 登录服务和既有小红书操作文档；随后在启动脚本中保留 `/json/version` 强校验，并新增小红书 page target 查找/打开、DevTools WebSocket 命令执行和 `Network.getCookies` 探测；最后补充启动模块、CDP 认证流程、收藏读取 Runbook、新修复流程文档和文档索引。
+
+关键决策：不把端口监听视为可用；不输出 Cookie 值，只输出 Cookie 数量和 `a1` / `web_session` 是否存在；默认未登录只 warning，便于首次打开 Chrome 后手动登录；正式读取前可使用 `-RequireXhsLogin` 让未登录变为失败退出；保留 `-SkipCookieProbe` 用于排查 Chrome 启动本身。
+
+变更文件：`scripts/start_chrome_cdp.ps1`、`docs/11-project-startup.md`、`docs/20-chrome-cdp-auth-flow.md`、`docs/21-xhs-favorites-operations-runbook.md`、`docs/26-chrome-cdp-cookie-probe-runbook.md`、`docs/README.md`、`docs/00-implementation-log.md`。
+
+公共 API、数据库字段、Notion schema 和小红书同步状态流转不变。失败行为新增脚本层前置失败：非 CDP 端口、缺少 `webSocketDebuggerUrl`、小红书 target 无法打开、DevTools WebSocket 无法执行 Cookie 探测会阻止启动链路误判；Cookie 可读但未登录时提示用户登录，`-RequireXhsLogin` 下直接失败。
+
+验证结果：PowerShell 语法解析通过；`.\scripts\start_chrome_cdp.ps1 -SkipCookieProbe` 返回 Chrome CDP ready；`.\scripts\start_chrome_cdp.ps1` 成功读取小红书 Cookie 状态，Cookie count 为 14，并检测到 `a1` 与 `web_session`；`git diff --check` 通过。

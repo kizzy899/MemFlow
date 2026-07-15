@@ -16,7 +16,7 @@
 
 - 使用 `data/chrome-cdp-profile` 作为独立、持久的浏览器资料目录；
 - 只在本机 `127.0.0.1:9223` 开启 CDP；
-- 打开小红书网页；
+- 打开小红书网页；`r`n- 通过 DevTools WebSocket 读取小红书 Cookie 状态；
 - 不修改日常 Chrome 的资料目录。
 
 首次使用时，在新打开的专用 Chrome 中登录小红书，并手动确认“个人主页 → 收藏”可以打开。以后不要删除 `data/chrome-cdp-profile`，否则需要重新登录。
@@ -27,7 +27,7 @@
 Invoke-RestMethod http://127.0.0.1:9223/json/version
 ```
 
-返回内容包含 `Browser` 和 `webSocketDebuggerUrl` 才表示 Playwright 可以连接。只有端口监听、但 `/json/version` 返回 404，不算可用 CDP。
+返回内容包含 `Browser` 和 `webSocketDebuggerUrl` 才表示 Playwright 可以连接。只有端口监听、但 `/json/version` 返回 404，不算可用 CDP。脚本默认还会读取小红书 Cookie 状态；看到 `Xiaohongshu cookie state is readable` 表示启动链路已能读取 Cookie，看到 `login cookies detected` 表示已登录。
 
 项目不使用 Chrome 自身可能占用的 9222 授权服务，默认使用 9223。如需其他端口：
 
@@ -114,7 +114,7 @@ Content-Type: application/json
 
 ### CHROME_NOT_LOGGED_IN
 
-在专用 Chrome 中登录小红书，并确认收藏页能手动打开，然后重新点击“连接当前 Chrome”。
+在专用 Chrome 中登录小红书，并确认收藏页能手动打开，然后重新运行 `.\scripts\start_chrome_cdp.ps1 -RequireXhsLogin`。通过后再点击“连接当前 Chrome”。
 
 ### 端口 8001 已被占用
 

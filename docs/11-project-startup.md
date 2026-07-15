@@ -24,13 +24,13 @@
 
 ## 数据、状态与失败行为
 
-脚本不新增公共 HTTP API、持久化字段或业务状态流转。应用启动时仍由现有 lifespan 创建目录、初始化 SQLite 表并执行迁移。非 `-Check` 启动会先调用 `scripts\start_chrome_cdp.ps1 -Port <ChromeCdpPort>`；该脚本复用 `data\chrome-cdp-profile`，并且会验证 `http://127.0.0.1:<port>/json/version` 返回 `webSocketDebuggerUrl`。端口已监听但不是 Chrome CDP 时脚本会失败，不会让后端带着不可用 CDP 继续启动。
+脚本不新增公共 HTTP API、持久化字段或业务状态流转。应用启动时仍由现有 lifespan 创建目录、初始化 SQLite 表并执行迁移。非 `-Check` 启动会先调用 `scripts\start_chrome_cdp.ps1 -Port <ChromeCdpPort>`；该脚本复用 `data\chrome-cdp-profile`，并且会验证 `http://127.0.0.1:<port>/json/version` 返回 `webSocketDebuggerUrl`。随后脚本会查找或打开小红书页面 target，通过 DevTools WebSocket 执行 `Network.getCookies`，确认小红书 Cookie 状态可读；终端只显示 Cookie 数量和是否存在 `a1` / `web_session`，不会输出 Cookie 值。端口已监听但不是 Chrome CDP 时脚本会失败，不会让后端带着不可用 CDP 继续启动。
 
 缺少 `.venv` 时脚本立即失败并提示创建环境；虚拟环境中缺少 `uvicorn` 时提示安装 `requirements.txt`；缺少 `.env` 时仅发出警告，因为健康检查等不依赖外部服务的功能仍可运行。端口越界由 PowerShell 参数校验拒绝。Chrome 不存在、CDP 启动脚本缺失或 CDP 脚本失败时，MemFlow 后端不会继续启动；应用异常退出会返回非零错误。`-Check` 只验证虚拟环境和 `uvicorn`，不会启动 Chrome 或服务。
 
 ## 测试覆盖
 
 - `powershell -ExecutionPolicy Bypass -File .\start.ps1 -Check`：验证解释器与 `uvicorn` 可用。
-- 非 `-Check` 启动：验证日志先出现 Chrome CDP ready 提示，再出现 MemFlow 服务地址。
+- 非 `-Check` 启动：验证日志先出现 Chrome CDP ready 和小红书 Cookie 状态可读提示，再出现 MemFlow 服务地址。
 - 启动后请求 `GET /health`：验证服务可访问并返回 `{"status":"ok"}`。
 - `python -m pytest -q`：执行现有应用回归测试。
