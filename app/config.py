@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     raw_output_dir: str = Field(default="files/raw", alias="RAW_OUTPUT_DIR")
     database_url: str = Field(default="sqlite:///data/app.db", alias="DATABASE_URL")
     proxy_url: str = Field(default="", alias="PROXY_URL")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    translation_task_timeout_seconds: int = Field(default=900, alias="TRANSLATION_TASK_TIMEOUT_SECONDS")
 
     @property
     def base_dir(self) -> Path:
@@ -84,4 +86,3 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-

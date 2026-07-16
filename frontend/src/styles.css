@@ -95,6 +95,10 @@ input:focus, textarea:focus { border-width: 5px; padding: 8px 10px; }
 .queue-item p { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
 .empty { margin: 32px 0; font: 15px/1.5 "Space Mono", monospace; text-align: left; text-transform: uppercase; }
 
+.translation-result { display: grid; gap: 10px; margin-top: 16px; padding: 14px; border: 3px solid var(--black); background: var(--sunken); }
+.translation-result strong { font-family: "Archivo Black", Impact, sans-serif; font-size: 18px; line-height: 1.1; text-transform: uppercase; }
+.translation-result code { display: block; overflow-wrap: anywhere; font: 12px/1.5 "Space Mono", monospace; }
+.translation-result a { color: var(--blue); font-weight: 700; }
 .task-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 3px solid var(--black); }
 .task-grid div { padding: 16px 8px; border-right: 3px solid var(--black); background: var(--white); text-align: center; }
 .task-grid div:last-child { border-right: 0; }

@@ -25,3 +25,4 @@ inbox/.links.*.tmp
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+skills/global-tech-translation/output/

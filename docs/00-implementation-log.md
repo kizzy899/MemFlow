@@ -510,3 +510,28 @@
 公共 API、数据库字段、Notion schema 和小红书同步状态流转不变。失败行为新增脚本层前置失败：非 CDP 端口、缺少 `webSocketDebuggerUrl`、小红书 target 无法打开、DevTools WebSocket 无法执行 Cookie 探测会阻止启动链路误判；Cookie 可读但未登录时提示用户登录，`-RequireXhsLogin` 下直接失败。
 
 验证结果：PowerShell 语法解析通过；`.\scripts\start_chrome_cdp.ps1 -SkipCookieProbe` 返回 Chrome CDP ready；`.\scripts\start_chrome_cdp.ps1` 成功读取小红书 Cookie 状态，Cookie count 为 14，并检测到 `a1` 与 `web_session`；`git diff --check` 通过。
+## Global Tech Translation Skill 入库（2026-07-16）
+
+实施顺序：先确认项目内 `skills/` 结构和全局 Codex `global-tech-translation` skill 文件；随后将该 skill 整套复制到 `skills/global-tech-translation/`；最后补充模块文档、文档索引和实施日志。
+
+关键决策：保留现有 `skills/translation_skill.py` 占位模块不变，把 WomenStack 翻译流程作为目录型 skill 放置，和既有 `skills/agent-search/` 布局保持一致。未复制生成产物，`output/` 继续由 skill 自带 `.gitignore` 排除，避免提交原文或译文内容。
+
+变更文件：新增 `skills/global-tech-translation/` 下的 `SKILL.md`、`EXTEND.md`、`agents/openai.yaml`、`references/` 和 `scripts/`；新增 `docs/27-global-tech-translation-skill.md`；更新 `docs/README.md` 与本日志。
+
+公共 API、数据库字段、Notion schema、前端状态和应用状态流转不变。该 skill 的产物状态只存在于生成目录中的 `qa.json`；缺少 API Key 时按 Codex handoff 路径生成待接管文件，不把占位稿视为完成稿。
+
+验证结果：确认 `skills/global-tech-translation/SKILL.md` 与 3 个 Python 脚本已落位；`python -m compileall -q skills\global-tech-translation\scripts` 通过；`git diff --check` 通过。
+
+## 首页文章翻译后台任务（2026-07-16）
+
+实施顺序：先复查既有 `/api/translate`、`TranslationService`、首页 Console 与 `skills/global-tech-translation` 流水线产物契约；随后新增进程内 `TranslationTaskManager`，将完整文章翻译接入后台线程和 `/api/translate/tasks` 轮询接口；再在首页工作列新增“文章翻译”卡片，支持 URL 提交、处理中禁用、结果路径与 Notion 链接展示；最后补充前后端测试与模块文档。
+
+关键决策：翻译入口只支持 URL 到中文整篇文章；输出目录使用 `TRANSLATION_OUTPUT_DIR` 的绝对路径传给 skill 脚本，避免相对路径落到 skill 目录；重复 URL 若已有 `translated_text_path` 直接返回已有结果，不重复运行流水线；后台自动翻译要求 `GEMINI_API_KEY`，若流水线进入 Codex 接管、`requires_agent_completion=true` 或 QA verdict 不是 ready，则任务失败，不交付占位稿。
+
+变更文件：`.env.example`、`app/config.py`、`app/services/translation_service.py`、`app/services/translation_task_manager.py`、`app/services/container.py`、`app/schemas/content.py`、`app/routers/translate.py`、`frontend/src/App.tsx`、`frontend/src/styles.css`、`frontend/src/App.test.tsx`、`tests/test_translate_tasks.py`、`docs/28-translation-home-task.md`、`docs/README.md`、`docs/00-implementation-log.md`。
+
+公共 API：新增 `POST /api/translate/tasks` 与 `GET /api/translate/tasks/status`，响应字段包含 `task_id`、`status`、`source_url`、`title`、`translated_file_path`、`item_id`、`notion_page_id`、`notion_page_url`、`last_error`、`started_at`、`finished_at`。新增配置项 `GEMINI_API_KEY` 与 `TRANSLATION_TASK_TIMEOUT_SECONDS`。持久化字段复用 `ContentItem.translated_text_path`、`translation_status`、`process_status`、`fetch_status`、`ai_status`、`notion_*` 等既有字段，不新增数据库列。
+
+状态与失败行为：任务状态为 `idle`、`processing`、`success`、`failed`，仅保存在进程内存；服务重启不恢复任务；同一时刻只运行一个翻译任务。非法 URL 返回 422；缺 Gemini key、流水线失败/超时、缺失产物、QA 未 ready 或需要接管时写入 `last_error` 并进入 failed；Notion 未配置时本地译文仍保存，条目等待后续同步。
+
+验证结果：`python -m compileall -q app tests` 通过；`.\.venv\Scripts\python.exe -m pytest tests\test_translate_tasks.py tests\test_docs_inventory.py -q` 7 passed；`node node_modules\vitest\vitest.mjs run src\App.test.tsx` 11 passed；`npm run build` 通过。首次直接运行全局 `pytest` 命中了 Anaconda pytest 插件冲突，改用仓库 `.venv` 后通过；`npm test -- --run src/App.test.tsx` 未退出并超时，已用 Vitest run 模式完成等价验证。

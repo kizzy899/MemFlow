@@ -1,0 +1,4 @@
+interface:
+  display_name: "海外技术翻译助手"
+  short_description: "输入技术 URL，生成双语 Markdown 草稿包"
+  default_prompt: "给定一个文章 URL，抽取正文与图片，生成 en.md、zh.md 和 qa.json，并保留来源信息。"

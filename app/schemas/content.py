@@ -81,6 +81,23 @@ class TranslateResponse(BaseModel):
     item_id: str
 
 
+
+class TranslationTaskRequest(BaseModel):
+    url: HttpUrl
+
+
+class TranslationTaskStatus(BaseModel):
+    task_id: str | None = None
+    status: Literal["idle", "processing", "success", "failed"]
+    source_url: str = ""
+    title: str = ""
+    translated_file_path: str = ""
+    item_id: str = ""
+    notion_page_id: str = ""
+    notion_page_url: str = ""
+    last_error: str = ""
+    started_at: str | None = None
+    finished_at: str | None = None
 class XiaohongshuSyncRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
 
@@ -194,4 +211,3 @@ class NotionSyncResponse(BaseModel):
     success: bool
     message: str
     data: NotionSyncData
-

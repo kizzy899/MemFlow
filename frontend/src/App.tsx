@@ -10,6 +10,7 @@ type XhsSession = { status: string; loggedIn: boolean; cookieValid: boolean; acc
 type InboxItem = { item_id: string; content: string; urls: string[]; status: 'pending' | 'failed'; failure_reason: string }
 type Inbox = { version: string; raw_content: string; pending_item_count: number; pending_url_count: number; items: InboxItem[] }
 type Task = { task_id: string | null; status: 'idle' | 'processing' | 'success' | 'failed'; current_url: string; processed: number; success: number; skipped_duplicate: number; failed: number; last_error: string }
+type TranslationTask = { task_id: string | null; status: 'idle' | 'processing' | 'success' | 'failed'; source_url: string; title: string; translated_file_path: string; item_id: string; notion_page_id: string; notion_page_url: string; last_error: string; started_at: string | null; finished_at: string | null }
 type XhsTask = { task_id: string | null; status: 'idle' | 'fetching' | 'processing' | 'cancelling' | 'cancelled' | 'success' | 'failed'; phase: string; step: string; message: string; requested: number; fetched: number; discovered: number; processed: number; success: number; failed: number; current_index: number; current_title: string; page_url: string; last_error: string; started_at: string | null; updated_at: string | null; last_progress_at: string | null; heartbeat_at: string | null; finished_at: string | null }
 type RecentItem = { item_id: string; title: string; original_url: string; normalized_url: string; notion_url: string; created_at: string; status: string }
 type MediaCandidate = { item_id: string; title: string; media_fetch_status: string; media_provider: string; ocr_status: string; transcription_status: string; content_completeness: string; updated_at: string }
@@ -29,6 +30,44 @@ function Badge({ status, children }: { status: string; children: React.ReactNode
   return <span className={`badge ${tone}`}>{children}</span>
 }
 
+
+function TranslationPanel() {
+  const emptyTranslationTask: TranslationTask = { task_id: null, status: 'idle', source_url: '', title: '', translated_file_path: '', item_id: '', notion_page_id: '', notion_page_url: '', last_error: '', started_at: null, finished_at: null }
+  const [url, setUrl] = useState('')
+  const [task, setTask] = useState<TranslationTask>(emptyTranslationTask)
+  const [error, setError] = useState('')
+  const active = task.status === 'processing'
+  const statusLabel = task.status === 'processing' ? '翻译中' : task.status === 'success' ? '已完成' : task.status === 'failed' ? '失败' : '空闲'
+  const load = useCallback(() => api<TranslationTask>('/api/translate/tasks/status').then(value => { setTask(value); if (value.status !== 'failed') setError('') }), [])
+  useEffect(() => { void load().catch(() => undefined) }, [load])
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => { void load().catch(value => setError(value.message)) }, 1500)
+    return () => window.clearInterval(timer)
+  }, [active, load])
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const trimmed = url.trim()
+    if (!trimmed) return
+    setError('')
+    try {
+      const value = await api<TranslationTask>('/api/translate/tasks', { method: 'POST', body: JSON.stringify({ url: trimmed }) })
+      setTask(value)
+      if (value.status === 'success') setUrl('')
+    } catch (value: any) {
+      setError(value.message)
+    }
+  }
+  return <Card title="文章翻译" action={<Badge status={task.status}>{statusLabel}</Badge>}>
+    <form onSubmit={submit} className="form-stack">
+      <label>文章链接<input type="url" value={url} disabled={active} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/article" /></label>
+      <button className="button large" disabled={active || !url.trim()}>{active ? '正在翻译…' : '开始翻译'}</button>
+    </form>
+    {active && <p className="current-url">正在翻译：{task.source_url}</p>}
+    {task.status === 'success' && <div className="translation-result" role="status"><strong>{task.title || '翻译已完成'}</strong><code>{task.translated_file_path}</code><div className="button-row">{task.notion_page_url && <a href={task.notion_page_url} target="_blank" rel="noreferrer">Notion ↗</a>}{task.item_id && <a href={`/console`}>条目 {task.item_id.slice(0, 8)}</a>}</div></div>}
+    {(task.status === 'failed' || error) && <p className="error-text" role="alert">{error || task.last_error}</p>}
+  </Card>
+}
 function FavoriteSyncPanel({ enabled }: { enabled: boolean }) {
   const [limitText, setLimitText] = useState('20')
   const [syncing, setSyncing] = useState(false)
@@ -215,6 +254,8 @@ export default function App() {
       </div>
 
       <div className="work-column">
+        <TranslationPanel />
+
         <Card title="待整理收件箱" action={<div className="head-actions"><a className="button secondary compact" href="/console/memory">打开 hot.md</a><Badge status="processing">{inbox.pending_item_count} 项 / {inbox.pending_url_count} 链接</Badge><button className="text-button" onClick={() => void loadInbox()}>刷新</button></div>}>
           <form onSubmit={appendInbox} className="form-stack"><label>粘贴文字或链接（一次粘贴的文字按一条处理）<textarea rows={6} value={queueText} onChange={e => setQueueText(e.target.value)} placeholder="多个链接可逐行粘贴，保存时会自动用空行分隔&#10;&#10;普通文字无论多少行，都作为一个整理单位" /></label><button className="button" disabled={!queueText.trim()}>加入待整理队列</button></form>
           <div className="selection-toolbar"><button className="button secondary compact" type="button" disabled={!inbox.items.length} onClick={toggleAll}>{selectedIds.size === inbox.items.length && inbox.items.length ? '取消全选' : '全选'}</button><span>已选择 {selectedIds.size} 条</span><button className="button danger-button compact" type="button" disabled={!selectedIds.size} onClick={() => void deleteSelected()}>删除选中</button></div>

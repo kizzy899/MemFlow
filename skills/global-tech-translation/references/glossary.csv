@@ -1,0 +1,11 @@
+en,zh
+LLM,大语言模型
+prompt,提示词
+latency,延迟
+throughput,吞吐量
+fine-tuning,微调
+inference,推理
+token,Token
+rate limit,速率限制
+open source,开源
+benchmark,基准测试

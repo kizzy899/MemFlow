@@ -34,3 +34,5 @@
 - [小红书后台同步与 Notion 连接稳定性](23-xhs-sync-jobs-notion-stability.md)
 - [小红书视频完整内容流水线](24-xhs-video-content-pipeline.md)
 - [通用视频知识提取流水线](25-video-knowledge-extraction.md)
+- [Global Tech Translation Skill](27-global-tech-translation-skill.md)
+- [首页文章翻译后台任务](28-translation-home-task.md)

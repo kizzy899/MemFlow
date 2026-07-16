@@ -19,6 +19,7 @@ from app.services.notion_service import NotionService
 from app.services.notion_sync_service import NotionSyncService
 from app.services.processor_manager import ProcessorManager
 from app.services.translation_service import TranslationService
+from app.services.translation_task_manager import TranslationTaskManager
 from app.services.web_parser_service import WebParserService
 from app.services.xiaohongshu_service import XiaohongshuService
 from app.services.xhs_login_service import XiaohongshuLoginService
@@ -61,7 +62,8 @@ class ServiceContainer:
         self.item_service = ItemService(self.notion_service)
         self.notion_sync_service = NotionSyncService(self.item_service)
         self.export_service = ExportService()
-        self.translation_service = TranslationService(self.web_parser_service, self.file_storage_service)
+        self.translation_service = TranslationService(settings, self.web_parser_service, self.file_storage_service, self.item_service)
+        self.translation_task_manager = TranslationTaskManager(self.translation_service)
         self.xhs_login_service = XiaohongshuLoginService(self.root, settings.memflow_auth_key, settings.chrome_cdp_url)
         self.xhs_media_pipeline = XhsMediaPipeline(settings, self.agent_search_service)
         self.video_pipeline = VideoPipeline(settings)
